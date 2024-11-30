@@ -265,7 +265,7 @@ class clipe_expt:
             if strand == "-":
                 rtt_rev = str(Seq(rtt_rev).reverse_complement())
             
-            pegrna_data[row['var_id']] = {'strand':strand, 'spacer': spacer, 'pam':pam, 'rtt':rtt_rev, 'pbs':pbs_rev}
+            pegrna_data[row['var_id']] = {'strand':strand, 'spacer': spacer, 'pam':pam, 'rtt':rtt_rev, 'pbs':str(Seq(pbs_rev).reverse_complement())}
 
         peg_df = pd.DataFrame(pegrna_data).transpose().reset_index()
         merged_df = pd.merge(window_df, peg_df, left_on='var_id', right_on='index', how='left')
