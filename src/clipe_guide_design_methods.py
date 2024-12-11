@@ -634,7 +634,7 @@ class clipe_expt:
 
         # find the closest site
         if pam_sites.shape[0] == 0:
-            return "no nicking site found"
+            return f"no ngrna site found {min_dist}-{max_dist}bp away from pe nick site", 0
         pam_sites.reset_index(drop=True, inplace=True)
         closest_site = pam_sites.iloc[pam_sites["pam_start_loc"].sub(pe_nick_site).abs().idxmin()]
         
