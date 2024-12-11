@@ -17,7 +17,7 @@ class clipe_expt:
 
         # process input files
         self.var_df, self.coding_strand = self.process_input_files(clinvar_path, gnomad_path, transcript_name)
-        self.set_valid_locs()
+        self.set_variant_locations()
 
         # pull in correct fasta
         fasta_dir = str(Path(__file__).parent) +  "/genome_fastas/"
@@ -83,9 +83,10 @@ class clipe_expt:
         self.ref_fasta = str(SeqIO.read(gzip.open(path, "rt"), "fasta").seq).upper()
 
 
-    def set_valid_locs(self):
+    def set_variant_locations(self):
         regions = self.var_df.agg({"pos": ["min", "max"]})
-        self.valid_locs = list(range(regions['pos']['min'],regions['pos']['max']+1))
+        self.vars_start = regions.loc["min", "pos"]
+        self.vars_end = regions.loc["max", "pos"]
 
 
     def process_input_files(self, clinvar_csv_path, gnomad_csv_path, transcript_name):
@@ -198,26 +199,37 @@ class clipe_expt:
 
         #self.unclassified_df = self.var_df[~self.var_df['var_id'].isin(self.pathogenic_vars['var_id']) & ~self.var_df['var_id'].isin(self.benign_vars['var_id']) & ~self.var_df['var_id'].isin(self.VUS_vars['var_id'])]
 
+    def find_pam_sites(self, start, stop):
+        # find all GG or CC sites in the desired region
+        pam_sites = []
+        for i in range(start, stop-2):
+            potential_pam = self.ref_fasta[i-1:i+2] #convert to 0 indexing
+            if potential_pam[1:] == "GG":
+                pam_sites.append({"pam_start_loc": i, "strand": "+"})
+            if potential_pam[:-1] == "CC":
+                pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
+        return pd.DataFrame(pam_sites)
+            
+
     def find_variant_dense_windows(self, desired_var_df):
         windows = []
-        for starting_loc in self.valid_locs:
-            starting_loc = starting_loc - 1 # convert to 0 indexing
-            potential_pam = self.ref_fasta[starting_loc:starting_loc+2]
-            if potential_pam == "GG":
-                strand = "+"
-                rtt_start = starting_loc-4 
+        pam_sites = self.find_pam_sites(self.vars_start-20, self.vars_end+20) # add some padding to allow for spacers outside of the variant region
+        for _, row in pam_sites.iterrows():
+            if row['strand'] == "+":
+                rtt_start = row['pam_start_loc'] - 3
                 rtt_end = rtt_start + self.rtt_len - 1
-            elif potential_pam == "CC":
-                strand = "-"
-                rtt_end = starting_loc+5 
+            elif row['strand'] == "-":
+                rtt_end = row['pam_start_loc'] + 3
                 rtt_start = rtt_end - self.rtt_len+1 
             else:
+                print("Error: strand not recognized. Contact developer")
                 continue
+
             # get all variants in the window
-            window = desired_var_df[(desired_var_df["pos"] >= rtt_start+1) & (desired_var_df["pos"] <= rtt_end+1)] # convert to 1 indexing
+            window = desired_var_df[(desired_var_df["pos"] >= rtt_start) & (desired_var_df["pos"] <= rtt_end)]
             # count the number of variants in the df
             count = len(window)
-            windows.append({'rtt_start':rtt_start+1, 'rtt_end':rtt_end+1, "num_vars":count, "strand":strand}) # convert to 1 indexing
+            windows.append({'rtt_start':rtt_start, 'rtt_end':rtt_end, "num_vars":count, "strand":row['strand']}) # store in 1 indexing
 
         # sort the windows by priority
         windows = sorted(windows, key=lambda x: x['num_vars'], reverse=True)
@@ -234,24 +246,24 @@ class clipe_expt:
         return top_windows
 
 
-    def design_pegrnas(self, start, end, strand, window_df, stop_codons=False):
+    def design_pegrnas(self, window_start, window_end, strand, window_df, stop_codons=False):
         # convert back to 0 indexing
         if strand == "+":
-            spacer_start = start-18 
-            spacer_end = start+1
+            spacer_start = window_start-18 
+            spacer_end = window_start+1
             spacer = self.ref_fasta[spacer_start:spacer_end+1]
             pam = self.ref_fasta[spacer_end+1:spacer_end+4]
 
-            rtt_rev_temp = self.ref_fasta[start-1:end]
-            pbs_rev = self.ref_fasta[start-self.pbs_len-1:start-1]
+            rtt_rev_temp = self.ref_fasta[window_start-1:window_end]
+            pbs_rev = self.ref_fasta[window_start-self.pbs_len-1:window_start-1]
         elif strand == "-":
-            spacer_start = end-3
-            spacer_end = end+16
+            spacer_start = window_end-3
+            spacer_end = window_end+16
             spacer = str(Seq(self.ref_fasta[spacer_start:spacer_end+1]).reverse_complement())
             pam = str(Seq(self.ref_fasta[spacer_start-3:spacer_start]).reverse_complement())
 
-            rtt_rev_temp = self.ref_fasta[start-1:end]
-            pbs_rev = str(Seq(self.ref_fasta[end:end+self.pbs_len]).reverse_complement())
+            rtt_rev_temp = self.ref_fasta[window_start-1:window_end]
+            pbs_rev = str(Seq(self.ref_fasta[window_end:window_end+self.pbs_len]).reverse_complement())
         else:
             return 
 
@@ -259,7 +271,7 @@ class clipe_expt:
 
         pegrna_data = {}
         for x, row in window_df.iterrows():
-            local_edit_pos = row['pos'] - start
+            local_edit_pos = row['pos'] - window_start
             if row['ref'].upper() != rtt_rev_temp[local_edit_pos]:
                 print("WARNING ALERT DEVELOPER: ClinVar reference doesn't match hg38 fasta")
 
@@ -279,8 +291,11 @@ class clipe_expt:
         merged_df = merged_df.sort_values("pos")
 
         if stop_codons:
-            merged_df = self.introduce_ptcs(merged_df, rtt_rev_temp, start, end, strand)
+            merged_df = self.introduce_ptcs(merged_df, rtt_rev_temp, window_start, window_end, strand)
 
+        # add nicking guides
+        merged_df['nicking sgrna'], merged_df['distance_to_nick'] = self.pick_nicking_guide(window_start, strand)
+ 
         return merged_df
 
 
@@ -606,6 +621,31 @@ class clipe_expt:
 
         return merged_df
 
+    def pick_nicking_guide(self, pe_nick_site, pe_nick_strand, min_dist = 40, max_dist = 100):
+        # find all GG or CC sites in the desired region
+        pam_sites = self.find_pam_sites(pe_nick_site-max_dist, pe_nick_site-min_dist)
+        pam_sites = pd.concat([pam_sites, self.find_pam_sites(pe_nick_site+min_dist, pe_nick_site+max_dist)])
+        if pe_nick_strand == "+":
+            pam_sites = pam_sites[pam_sites["strand"] == "-"]
+        elif pe_nick_strand == "-":
+            pam_sites = pam_sites[pam_sites["strand"] == "+"]
+        else:
+            return "strand not recognized"
+
+        # find the closest site
+        if pam_sites.shape[0] == 0:
+            return "no nicking site found"
+        pam_sites.reset_index(drop=True, inplace=True)
+        closest_site = pam_sites.iloc[pam_sites["pam_start_loc"].sub(pe_nick_site).abs().idxmin()]
+        
+        if closest_site['strand'] == "+":
+            sgrna = self.ref_fasta[closest_site["pam_start_loc"]-21 : closest_site["pam_start_loc"]-1]
+        elif closest_site['strand'] == "-":
+            sgrna = str(Seq(self.ref_fasta[closest_site["pam_start_loc"] : closest_site["pam_start_loc"]+20]).reverse_complement())
+        else:
+            return
+
+        return sgrna, closest_site["pam_start_loc"] - pe_nick_site
 
     def clipe_prepare_oligo_df(self, final_peg_df):
             # export for IDT -- PCR strategy
