@@ -38,7 +38,7 @@ class clipe_expt:
     def run_guide_design(self):
         # find the densest windows
         top_windows = self.find_variant_dense_windows(self.desired_vars)
-        
+        include_ptcs = False
         # based on inclusion types, add additional vars to windows
         vars_to_include = self.desired_vars
         if "GNOMAD" in self.inclusion_types and not self.gnomad_vars.empty:
@@ -47,6 +47,8 @@ class clipe_expt:
             vars_to_include = pd.concat([vars_to_include, self.benign_vars])
         if "PLP" in self.inclusion_types:
             vars_to_include = pd.concat([vars_to_include, self.pathogenic_vars])
+        if "PTC" in self.inclusion_types:
+            include_ptcs = True
         # remove duplicates
         vars_to_include = vars_to_include.drop_duplicates(subset="var_id")
 
@@ -54,8 +56,8 @@ class clipe_expt:
         final_peg_df = pd.DataFrame()
         for x, window in enumerate(top_windows):
             window_df = vars_to_include[(vars_to_include["pos"] >= window['rtt_start']) & (vars_to_include["pos"] <= window['rtt_end'])]
-            peg_df = self.design_pegrnas(window['rtt_start'], window['rtt_end'], window['strand'], window_df)
-            peg_df["window"] = x + 1
+            peg_df = self.design_pegrnas(window['rtt_start'], window['rtt_end'], window['strand'], window_df, stop_codons=include_ptcs) 
+            peg_df["editing_window"] = x + 1
             final_peg_df = pd.concat([final_peg_df, peg_df])
 
         # prepare oligo df
@@ -67,7 +69,7 @@ class clipe_expt:
         final_df = final_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
 
         return final_df
-
+    
 
     def set_ref_fasta(self, fasta_dir):
         # Get the unique chromosomes from the variant dataframe
@@ -118,7 +120,7 @@ class clipe_expt:
             return df
 
         # error out if less than three variants
-        clinvar_df = filter_out_non_missense(clinvar_df, 'Name', False)
+        clinvar_df = filter_out_non_missense(clinvar_df, 'Name', keep_synonymous=False)
         if len(clinvar_df) < 3:
             raise ValueError("Clinvar file must have at least three variants")
         
@@ -150,9 +152,9 @@ class clipe_expt:
             gnomad_df_no_clinvar = gnomad_df[~gnomad_df['var_id'].isin(clinvar_df['var_id'])]
 
             # pull out protein change and drop rows without protein change
-            gnomad_df_no_clinvar = filter_out_non_missense(gnomad_df_no_clinvar, 'Protein Consequence', True)
-
             # drop non-missense (nonsense, start/stop loss)
+            gnomad_df_no_clinvar = filter_out_non_missense(gnomad_df_no_clinvar, 'Protein Consequence', keep_synonymous=True)
+
             gnomad_df_no_clinvar['chr'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[0]))
             gnomad_df_no_clinvar['pos'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[1]))
             gnomad_df_no_clinvar['ref'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[2])
@@ -177,6 +179,7 @@ class clipe_expt:
             raise ValueError("Alert Developer - gene strand could not be identified")
 
         return var_df, coding_strand
+    
 
     def build_desired_dfs(self):
         self.pathogenic_vars = self.var_df[self.var_df["Germline classification"].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])]
@@ -230,8 +233,8 @@ class clipe_expt:
         
         return top_windows
 
-    #design spacer, rtt, pbs
-    def design_pegrnas(self, start, end, strand, window_df):
+
+    def design_pegrnas(self, start, end, strand, window_df, stop_codons=False):
         # convert back to 0 indexing
         if strand == "+":
             spacer_start = start-18 
@@ -271,12 +274,16 @@ class clipe_expt:
         merged_df = pd.merge(window_df, peg_df, left_on='var_id', right_on='index', how='left')
 
         if self.disrupt_pam:
-            merged_df["new_rtt"], merged_df["pam_status"], merged_df["seed_status"], merged_df["aa_change"], merged_df["warnings"] = zip(*merged_df.apply(lambda x: self.disrupt_pam_seed(x["ref_seq"], x["alt_seq"], x["spacer"], x["rtt"]), axis=1))
+            merged_df["rtt"], merged_df["pam_status"], merged_df["seed_status"], merged_df["aa_change"], merged_df["warnings"] = zip(*merged_df.apply(lambda x: self.disrupt_pam_seed(x["ref_seq"], x["alt_seq"], x["spacer"], x["rtt"]), axis=1))
 
-        return merged_df.sort_values("pos")
+        merged_df = merged_df.sort_values("pos")
+
+        if stop_codons:
+            merged_df = self.introduce_ptcs(merged_df, rtt_rev_temp, start, end, strand)
+
+        return merged_df
 
 
-    # function for creating oped input
     def create_edit_fastas(self, row):
         # get the location of the variant
         pos = row["pos"]
@@ -298,7 +305,7 @@ class clipe_expt:
             print(f"Warning: Reading frame is not maintained: {row['var_id'], len(alt_seq)}")
         return ref_seq, alt_seq
     
-
+    # TODO: DO I NEED THIS
     def find_spacer(self, ref_seq, spacer):
         # input validation: find spacer in the input
         orientation = 1
@@ -314,12 +321,17 @@ class clipe_expt:
 
         return spacer_start, spacer_end, orientation
 
+
     def find_aa_changes(self, ref_seq, alt_seq, codon_flip):
+        if len(ref_seq) % 3 != 0:
+            ref_seq = ref_seq[:-(len(ref_seq) % 3)]
+        if len(alt_seq) % 3 != 0:
+            alt_seq = alt_seq[:-(len(alt_seq) % 3)]
         # split into codons
         ref_codons = [ref_seq[i : i + 3].upper() for i in range(0, len(ref_seq), 3)]
         alt_codons = [alt_seq[i : i + 3].upper() for i in range(0, len(alt_seq), 3)]
 
-        if codon_flip: 
+        if codon_flip:
             ref_codons = [str(Seq(codon).reverse_complement()) for codon in ref_codons]
             alt_codons = [str(Seq(codon).reverse_complement()) for codon in alt_codons]
 
@@ -531,26 +543,68 @@ class clipe_expt:
         
         return str(rtt_rc), pam_status, seed_status, str(aa_changes), warnings
 
-    def print_alignments(self, var_id, ref_seq, spacer, rtt, trim=0):
-        spacer_start, spacer_end, orientation = self.find_spacer(ref_seq, spacer)
-        if spacer_start == "spacer not found":
-            print(var_id, "spacer not found in input")
-            return
-        if orientation == -1:
-            ref_seq = str(Seq(ref_seq).reverse_complement())
-        print(var_id, orientation)
-        print(ref_seq, "dna")
-        print("   ***" * (len(ref_seq)//6))
-        print(">" * spacer_start + ref_seq[spacer_start:spacer_end+3] + ">" * (len(ref_seq) - (spacer_end+3)), "spacer+pam")
+    def introduce_ptcs(self, merged_df,rtt_rev_temp, start, end, strand):
+        # find first codon in rtt
+        codon_flip = ((strand == "-" and self.coding_strand == "+") or (strand == "+" and self.coding_strand == "-"))
+        if not codon_flip:
+            first_rtt_variant = merged_df.iloc[0]
+            first_var_location = first_rtt_variant['pos'] - start
+            last_rtt_variant = merged_df.iloc[-1]
+        else:
+            first_rtt_variant = merged_df.iloc[-1]
+            first_var_location = end - first_rtt_variant['pos']
+            last_rtt_variant = merged_df.iloc[0]
+        
+        if not codon_flip:
+            first_codon_idx = first_var_location - first_rtt_variant["read_frame_pos"] + 1
+        else:
+            first_codon_idx = first_var_location + first_rtt_variant["read_frame_pos"] -3
 
-        rtt_start = spacer_start + len(spacer) - 3
-        rtt_end = spacer_start + len(spacer) - 3 + len(rtt)
-        gdna_region_for_rtt = ref_seq[rtt_start:rtt_end]
-        print_rtt = ""
-        for x, rtt_base in enumerate(str(Seq(rtt).reverse_complement())):
-            print_rtt += rtt_base.lower() if rtt_base != gdna_region_for_rtt[x] else rtt_base
-        print(("<" * rtt_start) + print_rtt + ("<" * (len(ref_seq) - rtt_end)), "rtt")
-        return
+        while first_codon_idx < 0 or first_codon_idx > 2:
+            if first_codon_idx < 0:
+                first_codon_idx +=3
+            if first_codon_idx > 2:
+                first_codon_idx -= 3
+
+        if strand == "-":
+            rtt_rev_temp = str(Seq(rtt_rev_temp).reverse_complement())
+
+        #pam disruption rtt
+        pam_disrupt_rtt = last_rtt_variant['rtt'][:6]
+            
+        index = first_codon_idx
+        ptc_num = 1
+        stop_rtts = []
+        while index+2 < self.rtt_len:
+            if codon_flip:
+                rtt_rev = rtt_rev_temp[:index] + "tca" + rtt_rev_temp[index+3:]
+            else:
+                rtt_rev = rtt_rev_temp[:index] + "tga" + rtt_rev_temp[index+3:]
+
+            if index > 5:
+                rtt_rev = pam_disrupt_rtt + rtt_rev[6:]
+                pam_status = last_rtt_variant['pam_status']
+                seed_status = last_rtt_variant['seed_status']
+            else:
+                pam_status = "stop codon disrupts PAM/seed region"
+                seed_status = "-"
+                
+            pos = start + index if strand == "+" else end - index
+
+            # check for aa changes:
+            aa_changes = self.find_aa_changes(rtt_rev_temp[first_codon_idx:], rtt_rev[first_codon_idx:], codon_flip)
+            warnings = ["error with ptc introduction"] if len(aa_changes) != 1 else []
+
+            # add in additional details
+            stop_rtts.append({'var_id': "PTC_" + str(ptc_num)+"_"+str(pos), 'chr': last_rtt_variant['chr'], 'pos': pos, 'strand':strand, 'spacer': last_rtt_variant['spacer'], 'pam':last_rtt_variant['pam'], 'rtt':rtt_rev, 'pbs':last_rtt_variant['pbs'], 'pam_status': pam_status, 'seed_status': seed_status, 'aa_change': str(aa_changes), 'warnings': warnings})
+            index += 3
+            ptc_num +=1
+        
+        stop_df = pd.DataFrame(stop_rtts)
+        merged_df = pd.concat([merged_df, stop_df])
+        merged_df = merged_df.sort_values("pos")
+
+        return merged_df
 
 
     def clipe_prepare_oligo_df(self, final_peg_df):
@@ -562,7 +616,7 @@ class clipe_expt:
             pre_spacer_seq = final_peg_df["spacer"].apply(lambda x: "cacc" if x[0].lower()=="g" else "caccg")
             idt_df["idt_spacer"] = pre_spacer_seq + final_peg_df["spacer"] + "gtttt"
             idt_df["scaffold"] = "AGAGCTAGAAATAGCAAGTTAAAATAAGGCTAGTCCGTTATCAACTTGAAAAAGTGGCACCGAGTCG".lower()
-            idt_df["idt_rtt"] = final_peg_df["new_rtt"].apply(lambda x: "gtgc" + str(Seq(x).reverse_complement()))
+            idt_df["idt_rtt"] = final_peg_df["rtt"].apply(lambda x: "gtgc" + str(Seq(x).reverse_complement()))
             idt_df['idt_pbs'] = final_peg_df['pbs']
             idt_df["3' Bsa1 recognition site"] = "cgcgtgagacc"
             idt_df["3' flanking right"] = "gtagcc"
@@ -592,6 +646,33 @@ class clipe_expt:
             idt_df["oligo_warnings"] = warnings
 
             return idt_df
+
+    def build_archetypal_df(self, idt_peg_df):
+        archetypal_df = []
+        # find all unique spacer sequences
+        unique_spacers = idt_peg_df["spacer"].unique()
+
+        # pick the row with the first stop codon in RTT
+        return
+
+    def build_files_for_jellyfish(self, final_df, archetype_df=None):
+        # take the rtt and var_ids from the final_df and prep for fasta output
+        rtt_df = final_df[["var_id", "rtt"]]
+        if archetype_df is not None:
+            rtt_df = rtt_df.concat(archetype_df[["var_id", "rtt"]])
+        rtt_df = rtt_df.sort_values("var_id")
+        # check for duplicate var or rtts
+        if rtt_df["var_id"].duplicated().any():
+            raise ValueError("Duplicate var_ids in the final_df")
+        if rtt_df["rtt"].duplicated().any():
+            raise ValueError("Duplicate rtts in the final_df")
+        
+        # write to txt variable that can later be written to a file
+        fasta_str = ""
+        for _, row in rtt_df.iterrows():
+            fasta_str += f">{row['var_id']}\n{row['rtt']}\n"
+
+        return rtt_df, fasta_str
 
 
 CODON_DICT = {
