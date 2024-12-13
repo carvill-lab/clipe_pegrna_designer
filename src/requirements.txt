@@ -1,5 +1,6 @@
 biopython==1.84
 pandas==2.2.3
 shiny==1.2.1
+shinywidgets
 faicons
 plotly
