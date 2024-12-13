@@ -20,7 +20,7 @@ class clipe_expt:
         self.set_variant_locations()
 
         # pull in correct fasta
-        fasta_dir = str(Path(__file__).parent) +  "/genome_fastas/"
+        fasta_dir = str(Path(__file__).parent) +  "/genome_files/"
         self.set_ref_fasta(fasta_dir)
 
         # build dataframes with path, benign, and vus
@@ -162,7 +162,6 @@ class clipe_expt:
             gnomad_df_no_clinvar['alt'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[3])
             gnomad_df_no_clinvar = process_reading_frame(gnomad_df_no_clinvar, 'Transcript Consequence')
             gnomad_df_no_clinvar = gnomad_df_no_clinvar[['var_id', 'chr', 'pos', 'ref', 'alt', 'protein_change', 'coding_pos', 'read_frame_pos','Allele Count', 'Allele Number', 'Allele Frequency']]
-
             var_df = pd.concat([clinvar_w_gnomad, gnomad_df_no_clinvar])
         else:
             var_df = clinvar_df
