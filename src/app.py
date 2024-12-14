@@ -68,7 +68,7 @@ app_ui = ui.page_sidebar(
             "Editing Windows", ui.output_ui("total_windows"), showcase=ICONS["windows"], theme = "primary"
         ),
         ui.value_box(
-            "pegRNA designs", ui.output_ui("total_pegs"), showcase=ICONS["variants"], theme = "primary", 
+            "pegRNA designs", ui.output_ui("total_pegs"), showcase=ICONS["variants"], theme = "primary"
         ),
         ui.value_box(
             "VUS variants", ui.output_ui("total_vus"), showcase=ICONS["vus"], theme = "primary"
@@ -78,9 +78,6 @@ app_ui = ui.page_sidebar(
         ),
         ui.value_box(
             "BLB variants", ui.output_ui("total_blb"), showcase=ICONS["blb"], theme = "primary"
-        ),
-        ui.value_box(
-            "Gnomad variants", ui.output_ui("total_gnomad"), showcase=ICONS["gnomad"], theme = "primary", 
         ),
         fill=False,
     ),
@@ -203,21 +200,22 @@ def server(input, output, session):
         if peg_df.shape[0] > 0:
             return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])].shape[0]
 
-    @render.ui
-    @reactive.event(input.action_button)
-    def total_gnomad():
-        if peg_df.shape[0] > 0:
-            if 'Allele Count' in peg_df:
-                return peg_df[peg_df['Allele Count'] >= input.allele_min()].shape[0]
-            else:
-                return 0
+    # @render.ui
+    # @reactive.event(input.action_button)
+    # def total_gnomad():
+    #     if peg_df.shape[0] > 0:
+    #         if 'Allele Count' in peg_df:
+    #             return peg_df[peg_df['Allele Count'] >= input.allele_min()].shape[0]
+    #         else:
+    #             return 0
 
     @render_plotly
     @reactive.event(input.action_button)
     def peg_dist_chart():
     # Generate a random signal
-        x = list(peg_df["coding_pos"])
+        x = list(peg_df["coding_pos"].dropna())
         x = [int(i) for i in x]
+
         layout = go.Layout(
             yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
             xaxis = dict(range=[0, max(x)+10]),
