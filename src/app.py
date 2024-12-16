@@ -65,21 +65,25 @@ app_ui = ui.page_sidebar(
     ),
     ui.layout_columns(
         ui.value_box(
-            "Editing Windows", ui.output_ui("total_windows"), showcase=ICONS["windows"], theme = "primary"
+            "Editing Windows", ui.output_ui("total_windows"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "pegRNA designs", ui.output_ui("total_pegs"), showcase=ICONS["variants"], theme = "primary"
+            "pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "VUS variants", ui.output_ui("total_vus"), showcase=ICONS["vus"], theme = "primary"
+            "VUS variants", ui.output_ui("total_vus"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "PLP variants", ui.output_ui("total_plp"), showcase=ICONS["plp"], theme = "primary"
+            "PLP variants", ui.output_ui("total_plp"),  theme= ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "BLB variants", ui.output_ui("total_blb"), showcase=ICONS["blb"], theme = "primary"
+            "BLB variants", ui.output_ui("total_blb"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+        ),
+        ui.value_box(
+            "Gnomad variants", ui.output_ui("total_gnomad"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         fill=False,
+        #max_height="100px",
     ),
     ui.layout_columns(
         ui.card(

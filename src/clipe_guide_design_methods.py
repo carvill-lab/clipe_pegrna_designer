@@ -744,3 +744,28 @@ def make_synonymous_changes(codons):
             if CODON_DICT[key][0] == CODON_DICT[codon][0] and key != codon:
                 codon_changes[codon].append({'syn_codon': key, 'aa': CODON_DICT[key][0], 'freq': CODON_DICT[key][2]})
     return codon_changes
+
+# for testing above methods
+def main():
+    PBS_LEN = 10
+    RTT_LEN = 40
+    NUM_WINDOWS = 10
+    DISRUPT_PAMS = True
+    DESIGN_STRAT = "vus"
+    INCLUSION_TYPES = ['BLB', 'PLP', 'GNOMAD', 'PTC']
+    ALLELE_COUNT_MIN = 10
+
+    TRANSCRIPT_NAME = 'NM_000548.5'
+    CLINVAR_PATH = './input/clinvar_result.txt'
+    GNOMAD_PATH = './input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv'
+    expt = clipe_expt(TRANSCRIPT_NAME, CLINVAR_PATH, GNOMAD_PATH, PBS_LEN, RTT_LEN, NUM_WINDOWS, DISRUPT_PAMS, DESIGN_STRAT, INCLUSION_TYPES, ALLELE_COUNT_MIN)
+    final_df = expt.run_guide_design()
+    
+    final_df.to_csv("test.csv")
+
+    df, fa_txt = expt.build_files_for_jellyfish(final_df)
+    with open("test.fa", "w") as f:
+        f.write(fa_txt)
+    df.to_csv("fish.tsv", sep="\t", index=False)
+
+#main()
