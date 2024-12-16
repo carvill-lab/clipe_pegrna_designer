@@ -44,20 +44,20 @@ app_ui = ui.page_sidebar(
         ui.input_selectize("gene", label="Gene Name", choices=[], width="100%"),
         #ui.input_text("transcript", label="Transcript (Refseq)", value="NM_000548.5"),
         ui.input_select("transcript", label="Transcript (Refseq)", choices=[], width="100%"),
-        ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1),
-        ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1),
-        ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1),
-        ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region with synonymous variants?", {"yes": "Yes", "no": "No"}, width="100%"),
+        ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1, min=1),
+        ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
+        ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
+        ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
         ui.input_file("clinvar_csv", "Choose missense ClinVar csv to upload:", multiple=False),
         ui.input_file("gnomad_csv", "Choose gnomAD csv to upload:", multiple=False),
-        ui.input_numeric("allele_min", label="Minimum allele count for gnomad (if applicable)", value=5, step=1),
+        ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
         ui.input_checkbox_group(  
             "checkbox_group",  
             "Include additional variants in editing windows:",  
             {  
-                "BLB": "BLB Variants (ClinVar)",  
+                "BLB": "BLB variants (ClinVar)",  
                 "PLP": "PLP Variants (ClinVar)",  
-                "GNOMAD": "gnomAD variants (synonymous and missense)",
+                "GNOMAD": "gnomAD variants with allele count >= 5",
                 "PTC": "PTC variants to induce LoF for assay validation/calibration",  
             },
             width="100%"),
@@ -139,7 +139,7 @@ def server(input, output, session):
     def build_peg_df():
         # remove download button if it exists
         ui.remove_ui("#download")
-        global peg_df, fish_df, fish_fa_txt
+        global peg_df, fish_df, fish_fa_txt, windows
         peg_df = pd.DataFrame()
         # validate input files exist
         if not input.clinvar_csv():
@@ -155,7 +155,7 @@ def server(input, output, session):
             disrupt_pam = False
     
         expt = clipe_expt(input.transcript().split(" ")[0], input.clinvar_csv()[0]["datapath"], gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
-        peg_df = expt.run_guide_design()
+        peg_df, windows = expt.run_guide_design()
         fish_df, fish_fa_txt = expt.build_files_for_jellyfish(peg_df)
         ui.insert_ui(
             ui.download_button("download_button", "Download selected files", width="60%"),
@@ -202,14 +202,25 @@ def server(input, output, session):
             shutil.rmtree(path)
             return str(zip_path)
         
-
-
     # @render.ui
     # @reactive.event(input.action_button)
     # def total_windows():
     #     if peg_df.shape[0] > 0:
     #         windows = peg_df["editing_window"].nunique()
     #         return windows
+
+    @reactive.effect
+    @reactive.event(input.allele_min)
+    def allele_min():
+        ui.update_checkbox_group(  
+            "checkbox_group",  
+            choices= {  
+                "BLB": "BLB variants (ClinVar)",  
+                "PLP": "PLP Variants (ClinVar)",  
+                "GNOMAD": f"gnomAD variants with allele count >= {input.allele_min()}",
+                "PTC": "PTC variants to induce LoF for assay validation/calibration",  
+            })
+        return 
 
     @render.ui
     @reactive.event(input.action_button)
@@ -249,8 +260,8 @@ def server(input, output, session):
     @reactive.event(input.action_button)
     def peg_dist_chart():
     # Generate a random signal
-        x = list(peg_df["coding_pos"].dropna())
-        x = [int(i) for i in x]
+        df_to_plot = peg_df.copy().dropna(subset=["coding_pos"])
+        x = [int(i) for i in list(df_to_plot["coding_pos"])]
 
         layout = go.Layout(
             yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
@@ -270,7 +281,7 @@ def server(input, output, session):
             line_width=3,
             opacity=0.8,
         )
-        windows = peg_df.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
+        windows = df_to_plot.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
         for _, window in windows.iterrows():
             fig.add_shape(
                 type="rect",

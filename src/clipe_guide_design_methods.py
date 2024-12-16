@@ -69,7 +69,7 @@ class clipe_expt:
         # drop some columns
         final_df = final_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
 
-        return final_df
+        return final_df, top_windows
     
 
     def set_ref_fasta(self, fasta_dir):
@@ -189,7 +189,7 @@ class clipe_expt:
         self.benign_vars = self.var_df[self.var_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])]
         self.VUS_vars = self.var_df[self.var_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])]
         if 'Allele Count' in self.var_df:
-            self.gnomad_vars = self.var_df[self.var_df['Allele Count'] > self.allele_count_min]
+            self.gnomad_vars = self.var_df[self.var_df['Allele Count'] >= self.allele_count_min]
         else:
             self.gnomad_vars = pd.DataFrame()
         # print the number of pathogenic, benign, and VUS variants
