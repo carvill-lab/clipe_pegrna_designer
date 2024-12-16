@@ -32,6 +32,7 @@ class clipe_expt:
         elif design_strategy == "vus":
             self.desired_vars = self.VUS_vars
         else:
+            print("Design strategy not recognized")
             raise ValueError("Design strategy not recognized")
         
 
@@ -75,6 +76,7 @@ class clipe_expt:
         # Get the unique chromosomes from the variant dataframe
         unique_chromosomes = self.var_df['chr'].unique()
         if len(unique_chromosomes) > 1:
+            print("Multiple chromosomes detected in the input file.")
             raise ValueError("Multiple chromosomes detected in the input file.")
         chrom = f'chr{unique_chromosomes[0]}'
 
@@ -176,6 +178,7 @@ class clipe_expt:
         elif clinvar_df['coding_pos'].iloc[-1] < clinvar_df['coding_pos'].iloc[0]:
             coding_strand = "-"
         else:
+            print("Error: gene strand could not be identified")
             raise ValueError("Alert Developer - gene strand could not be identified")
 
         return var_df, coding_strand
@@ -190,11 +193,11 @@ class clipe_expt:
         else:
             self.gnomad_vars = pd.DataFrame()
         # print the number of pathogenic, benign, and VUS variants
-        print(f"Total variants: {self.var_df.shape[0]}")
-        print(f"Pathogenic variants: {self.pathogenic_vars.shape[0]}")
-        print(f"Benign variants: {self.benign_vars.shape[0]}")
-        print(f"VUS variants: {self.VUS_vars.shape[0]}")
-        print(f"Gnomad variants: {self.gnomad_vars.shape[0]}")
+        # print(f"Total variants: {self.var_df.shape[0]}")
+        # print(f"Pathogenic variants: {self.pathogenic_vars.shape[0]}")
+        # print(f"Benign variants: {self.benign_vars.shape[0]}")
+        # print(f"VUS variants: {self.VUS_vars.shape[0]}")
+        # print(f"Gnomad variants: {self.gnomad_vars.shape[0]}")
 
         #self.unclassified_df = self.var_df[~self.var_df['var_id'].isin(self.pathogenic_vars['var_id']) & ~self.var_df['var_id'].isin(self.benign_vars['var_id']) & ~self.var_df['var_id'].isin(self.VUS_vars['var_id'])]
 
@@ -238,7 +241,7 @@ class clipe_expt:
         for window in windows:
             if not any([window['rtt_start'] <=  tw['rtt_start'] <= window['rtt_end'] or window['rtt_start'] <= tw['rtt_end'] <= window['rtt_end'] for tw in top_windows]):
                 top_windows.append(window)
-                print(f"Window: {window['rtt_start']}-{window['rtt_end']}, # variants: {window['num_vars']}, strand: {window['strand']}")
+                #print(f"Window: {window['rtt_start']}-{window['rtt_end']}, # variants: {window['num_vars']}, strand: {window['strand']}")
             if len(top_windows) == self.num_windows:
                 break
         
@@ -272,8 +275,8 @@ class clipe_expt:
         for x, row in window_df.iterrows():
             local_edit_pos = row['pos'] - window_start
             if row['ref'].upper() != rtt_rev_temp[local_edit_pos]:
-                print("WARNING ALERT DEVELOPER: ClinVar reference doesn't match hg38 fasta")
-
+                print(f"Warning: Reference genome does not match the reference allele: {row['var_id']}")
+                raise ValueError("WARNING ALERT DEVELOPER: ClinVar reference doesn't match hg38 fasta")
             rtt_rev = rtt_rev_temp[:local_edit_pos] + row['alt'].lower() + rtt_rev_temp[local_edit_pos+1:]
             
             if strand == "-":
@@ -315,8 +318,10 @@ class clipe_expt:
         # create warning if ref doesn't match the reference genome
         if ref_seq[l_padding] != ref:
             print(f"Warning: Reference genome does not match the reference allele: {row['var_id']}")
+            raise ValueError(f"Warning: Reference genome does not match the reference allele: {row['var_id']}")
         if (len(alt_seq)) % 3 != 0:
             print(f"Warning: Reading frame is not maintained: {row['var_id'], len(alt_seq)}")
+            raise ValueError(f"Warning: Reading frame is not maintained: {row['var_id'], len(alt_seq)}")
         return ref_seq, alt_seq
     
     # TODO: DO I NEED THIS
@@ -499,7 +504,7 @@ class clipe_expt:
                 start = rtt_rc[1:8].upper().find(pam_edit["old_pam_codon_region"]) + 1
                 if start == 0:
                     print("Error: old pam not found in rtt -- Alert Developer")
-                    print(pam_edit, rtt_rc)
+                    raise ValueError("Error: old pam not found in rtt -- Alert Developer")
                 else:
                     rtt_rc = rtt_rc[:start] + pam_edit["new_pam_codon_region"] + rtt_rc[start+6:]
 
@@ -515,7 +520,7 @@ class clipe_expt:
                 start = rtt_rc[0:5].upper().find(seed_edit["old_seed_codon_region"])
                 if start == -1:
                     print("Error: old seed not found in rtt -- Alert Developer")
-                    print(seed_edit, rtt_rc)
+                    raise ValueError("Error: old seed not found in rtt -- Alert Developer")
                 else:
                     rtt_rc = rtt_rc[:start] + seed_edit["new_seed_codon_region"] + rtt_rc[start+len(seed_edit["new_seed_codon_region"]):]
 
@@ -552,8 +557,8 @@ class clipe_expt:
         if len(aa_changes) == 0:
             warnings.append("No AA change in the edited sequence")
 
-        if len(warnings) > 1 and warnings!=["No synonymous changes disrupt the seed or PAM"]:
-            print(warnings)
+        #if len(warnings) > 1 and warnings!=["No synonymous changes disrupt the seed or PAM"]:
+            #print(warnings)
         
         return str(rtt_rc), pam_status, seed_status, str(aa_changes), warnings
 
@@ -702,8 +707,10 @@ class clipe_expt:
         rtt_df = rtt_df.sort_values("var_id")
         # check for duplicate var or rtts
         if rtt_df["var_id"].duplicated().any():
+            print("Duplicate var_ids in the final_df")
             raise ValueError("Duplicate var_ids in the final_df")
         if rtt_df["rtt"].duplicated().any():
+            print("Duplicate rtts in the final_df")
             raise ValueError("Duplicate rtts in the final_df")
         
         # write to txt variable that can later be written to a file

@@ -1,9 +1,11 @@
-import faicons as fa
+# import faicons as fa
 from pathlib import Path
 import pandas as pd
 import plotly.graph_objs as go
 from datetime import date
 from clipe_guide_design_methods import *
+import os
+import shutil
 
 # Load data and compute static values
 from shiny import App, reactive, render, ui
@@ -16,15 +18,15 @@ gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 
 
-ICONS = {
-    "windows": fa.icon_svg("window-restore", "regular"),
-    "variants": fa.icon_svg("dna"),
-    "vus": fa.icon_svg("circle-question"),
-    "plp": fa.icon_svg("circle-check"),
-    "blb": fa.icon_svg("circle-check"),
-    "gnomad": fa.icon_svg("people-group"),
-    "ellipsis": fa.icon_svg("ellipsis"),
-}
+# ICONS = {
+#     "windows": fa.icon_svg("window-restore", "regular"),
+#     "variants": fa.icon_svg("dna"),
+#     "vus": fa.icon_svg("circle-question"),
+#     "plp": fa.icon_svg("circle-check"),
+#     "blb": fa.icon_svg("circle-check"),
+#     "gnomad": fa.icon_svg("people-group"),
+#     "ellipsis": fa.icon_svg("ellipsis"),
+# }
 
 # Add page title and sidebar
 app_ui = ui.page_sidebar(
@@ -64,24 +66,24 @@ app_ui = ui.page_sidebar(
         width=400
     ),
     ui.layout_columns(
+        # ui.value_box(
+        #     "Editing Windows", ui.output_ui("total_windows"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+        # ),
         ui.value_box(
-            "Editing Windows", ui.output_ui("total_windows"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            "# pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            "# VUS variants", ui.output_ui("total_vus"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "VUS variants", ui.output_ui("total_vus"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            "# PLP variants", ui.output_ui("total_plp"),  theme= ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
         ui.value_box(
-            "PLP variants", ui.output_ui("total_plp"),  theme= ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            "# BLB variants", ui.output_ui("total_blb"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
         ),
-        ui.value_box(
-            "BLB variants", ui.output_ui("total_blb"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        ),
-        ui.value_box(
-            "Gnomad variants", ui.output_ui("total_gnomad"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        ),
+        # ui.value_box(
+        #     "Gnomad variants", ui.output_ui("total_gnomad"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+        # ),
         fill=False,
         #max_height="100px",
     ),
@@ -94,8 +96,7 @@ app_ui = ui.page_sidebar(
                 "Downloads",
                 class_="d-flex justify-content-between align-items-center",
             ),
-        #TODO INSERT LINKS
-        id="download_area",
+            ui.output_ui("download_area", ),
         ),
         ui.card(
             ui.card_header(
@@ -138,7 +139,7 @@ def server(input, output, session):
     def build_peg_df():
         # remove download button if it exists
         ui.remove_ui("#download")
-        global peg_df
+        global peg_df, fish_df, fish_fa_txt
         peg_df = pd.DataFrame()
         # validate input files exist
         if not input.clinvar_csv():
@@ -155,29 +156,60 @@ def server(input, output, session):
     
         expt = clipe_expt(input.transcript().split(" ")[0], input.clinvar_csv()[0]["datapath"], gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
         peg_df = expt.run_guide_design()
-
+        fish_df, fish_fa_txt = expt.build_files_for_jellyfish(peg_df)
         ui.insert_ui(
-            ui.download_button("download", "Download CSV"),
+            ui.download_button("download_button", "Download selected files", width="60%"),
             selector="#download_area",
-            where="beforeEnd",
+            where="afterEnd",
+        )
+        ui.insert_ui(
+            ui.input_checkbox_group(  
+            "download_checkbox",  
+            "Download the following files:",  
+            {  
+            "peg_tables": "pegRNA design tables (.csv)",  
+            "RTTs": "RTT data for downstream analyses (.csv, .fa)",
+            "idt": "IDT oPool ordering files (.xlsx)",
+            },
+            width="100%"),
+            selector="#download_area",
+            where="afterEnd",
         )
 
         return peg_df
 
     @render.download()
-    def download():
-        path = Path(__file__).parent / f"{input.gene()}_clipe_peg_df_{date.today()}.csv"
-        print(path)
-        peg_df.to_csv(path, index=False)
-        return str(path)
+    def download_button():
+        files_to_download = input.download_checkbox()
+        if len(files_to_download) > 0:
+            file_prefix = f"{input.gene()}_"
+            path = Path(__file__).parent / f"{date.today()}_{file_prefix}clipe_designs"
+            os.makedirs(path, exist_ok=True)
+
+            if "peg_tables" in files_to_download:
+                peg_df.to_csv(path / f"{file_prefix}full_pegRNA_designs.csv", index=False)
+            if "RTTs" in files_to_download:
+                with open(path / f"{file_prefix}RTT_fasta.fa", "w") as f:
+                    f.write(fish_fa_txt)
+                fish_df.to_csv(path / f"{file_prefix}RTT_table.csv", index=False)
+            if "idt" in files_to_download:
+                idt_df = peg_df[['editing_window', "full_peg"]]
+                idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
+                idt_df.columns = ["Pool name", "Sequence"]
+                idt_df.to_excel(path / f"{file_prefix}IDT_order_data.xlsx", index=False)
+            
+            zip_path = shutil.make_archive(path, 'zip', path)
+            shutil.rmtree(path)
+            return str(zip_path)
+        
 
 
-    @render.ui
-    @reactive.event(input.action_button)
-    def total_windows():
-        if peg_df.shape[0] > 0:
-            windows = peg_df["editing_window"].nunique()
-            return windows
+    # @render.ui
+    # @reactive.event(input.action_button)
+    # def total_windows():
+    #     if peg_df.shape[0] > 0:
+    #         windows = peg_df["editing_window"].nunique()
+    #         return windows
 
     @render.ui
     @reactive.event(input.action_button)
