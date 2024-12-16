@@ -53,11 +53,11 @@ app_ui = ui.page_sidebar(
         ui.input_numeric("allele_min", label="Minimum allele count for gnomad (if applicable)", value=5, step=1),
         ui.input_checkbox_group(  
             "checkbox_group",  
-            "Include/exclude certain variant types",  
+            "Include additional variants in editing windows:",  
             {  
-                "BLB": "Truth_Set_BLB (Clinvar)",  
-                "PLP": "Truth_Set_PLP (Clinvar)",  
-                "GNOMAD": "gnomAD variants (synonymous and missense; gnomAD)",
+                "BLB": "BLB Variants (ClinVar)",  
+                "PLP": "PLP Variants (ClinVar)",  
+                "GNOMAD": "gnomAD variants (synonymous and missense)",
                 "PTC": "PTC variants to induce LoF for assay validation/calibration",  
             },
             width="100%"),
@@ -171,7 +171,7 @@ def server(input, output, session):
             "RTTs": "RTT data for downstream analyses (.csv, .fa)",
             "idt": "IDT oPool ordering files (.xlsx)",
             },
-            width="100%"),
+            width="100%", selected=["peg_tables", "RTTs", "idt"]),
             selector="#download_area",
             where="afterEnd",
         )
