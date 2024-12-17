@@ -13,7 +13,7 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
 app_dir = Path(__file__).parent
-gene_data = pd.read_csv(app_dir / "files/hg38_transcripts.tsv", sep="\t")
+gene_data = pd.read_csv(app_dir / "genome_files/hg38_transcripts.tsv", sep="\t")
 gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
@@ -48,12 +48,8 @@ app_ui = ui.page_navbar(
             #ui.input_text("transcript", label="Transcript (Refseq)", value="NM_000548.5"),
             ui.input_select("transcript", label="Transcript (Refseq)", choices=[], width="100%"),
             ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1, min=1),
-            ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
-            ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
-            ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
             ui.input_file("clinvar_csv", "Choose missense ClinVar csv to upload:", multiple=False),
             ui.input_file("gnomad_csv", "Choose gnomAD csv to upload:", multiple=False),
-            ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
             ui.input_checkbox_group(  
                 "checkbox_group",  
                 "Include additional variants in editing windows:",  
@@ -65,6 +61,12 @@ app_ui = ui.page_navbar(
                 },
                 width="100%"),
             ui.input_action_button("action_button", "Design epegRNA Libraries"),
+            ui.accordion(ui.accordion_panel('Additional Options',
+                ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
+                ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
+                ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
+                ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
+                ),id="additional_options", multiple=False, open=False),
             open="desktop",
             width=400
         ),
