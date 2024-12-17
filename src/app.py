@@ -140,7 +140,7 @@ def server(input, output, session):
     def build_peg_df():
         # remove download button if it exists
         ui.remove_ui("#download")
-        global peg_df, fish_df, fish_fa_txt, windows
+        global peg_df, fish_df, fish_fa_txt#, windows
         peg_df = pd.DataFrame()
         # validate input files exist
         if not input.clinvar_csv():
@@ -158,6 +158,7 @@ def server(input, output, session):
         expt = clipe_expt(input.transcript().split(" ")[0], input.clinvar_csv()[0]["datapath"], gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
         peg_df, windows = expt.run_guide_design()
         fish_df, fish_fa_txt = expt.build_files_for_jellyfish(peg_df)
+        # TODO: reduce sig figs in allele percentage
         ui.insert_ui(
             ui.download_button("download_button", "Download selected files", width="60%"),
             selector="#download_area",
@@ -179,29 +180,30 @@ def server(input, output, session):
 
         return peg_df
 
-    @render.download()
+    @render.download(filename=lambda: f"{date.today()}_{input.gene()}_clipe_designs.zip")
     def download_button():
         files_to_download = input.download_checkbox()
         if len(files_to_download) > 0:
             file_prefix = f"{input.gene()}_"
-            temp_dir = tempfile.TemporaryDirectory()
-            path = Path(temp_dir.name) / f"{date.today()}_{file_prefix}clipe_designs"
-            os.makedirs(path, exist_ok=True)
-            if "peg_tables" in files_to_download:
-                peg_df.to_csv(path / f"{file_prefix}full_pegRNA_designs.csv", index=False)
-            if "RTTs" in files_to_download:
-                with open(path / f"{file_prefix}RTT_fasta.fa", "w") as f:
-                    f.write(fish_fa_txt)
-                fish_df.to_csv(path / f"{file_prefix}RTT_table.csv", index=False)
-            if "idt" in files_to_download:
-                idt_df = peg_df[['editing_window', "full_peg"]]
-                idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
-                idt_df.columns = ["Pool name", "Sequence"]
-                idt_df.to_excel(path / f"{file_prefix}IDT_order_data.xlsx", index=False)
-            zip_path = shutil.make_archive(path, 'zip', path)
-            shutil.rmtree(path)
-            return str(zip_path)
-        
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                if "peg_tables" in files_to_download:
+                    peg_df.to_csv(temp_path / f"{file_prefix}full_pegRNA_designs.csv", index=False)
+                if "RTTs" in files_to_download:
+                    with open(temp_path / f"{file_prefix}RTT_fasta.fa", "w") as f:
+                        f.write(fish_fa_txt)
+                    fish_df.to_csv(temp_path / f"{file_prefix}RTT_table.csv", index=False)
+                if "idt" in files_to_download:
+                    idt_df = peg_df[['editing_window', "full_peg"]]
+                    idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
+                    idt_df.columns = ["Pool name", "Sequence"]
+                    idt_df.to_excel(temp_path / f"{file_prefix}IDT_order_data.xlsx", index=False)
+                zip_path = shutil.make_archive(temp_path, 'zip', temp_path)
+                # yield zip file data
+                with open(zip_path, "rb") as f:
+                    x = f.read()
+                yield(x)
+
     # @render.ui
     # @reactive.event(input.action_button)
     # def total_windows():
