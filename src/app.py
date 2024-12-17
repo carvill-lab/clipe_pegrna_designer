@@ -139,7 +139,8 @@ def server(input, output, session):
     @reactive.event(input.action_button)
     def build_peg_df():
         # remove download button if it exists
-        ui.remove_ui("#download")
+        ui.remove_ui("#download_button")
+        ui.remove_ui("#download_checkbox")
         global peg_df, fish_df, fish_fa_txt#, windows
         peg_df = pd.DataFrame()
         # validate input files exist

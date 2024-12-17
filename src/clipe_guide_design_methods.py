@@ -625,7 +625,7 @@ class clipe_expt:
 
             # check for aa changes:
             aa_changes = self.find_aa_changes(rtt_rev_temp[first_codon_idx:], rtt_rev[first_codon_idx:], codon_flip)
-            warnings = ["error with ptc introduction"] if len(aa_changes) != 1 else []
+            warnings = ["error with ptc introduction"] if (len(aa_changes) != 1 or '->End' not in aa_changes[0]) else []
 
             # add in additional details
             stop_rtts.append({'var_id': "PTC_" + str(ptc_num)+"_"+str(pos), 'chr': last_rtt_variant['chr'], 'pos': pos, 'strand':strand, 'spacer': last_rtt_variant['spacer'], 'pam':last_rtt_variant['pam'], 'rtt':rtt_rev, 'pbs':last_rtt_variant['pbs'], 'pam_status': pam_status, 'seed_status': seed_status, 'aa_change': str(aa_changes), 'warnings': warnings})
