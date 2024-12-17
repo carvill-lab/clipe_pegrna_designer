@@ -57,7 +57,7 @@ class clipe_expt:
         final_peg_df = pd.DataFrame()
         for x, window in enumerate(top_windows):
             window_df = vars_to_include[(vars_to_include["pos"] >= window['rtt_start']) & (vars_to_include["pos"] <= window['rtt_end'])]
-            peg_df = self.design_pegrnas(window['rtt_start'], window['rtt_end'], window['strand'], window_df, stop_codons=include_ptcs) 
+            peg_df = self.design_pegrnas(window['rtt_start'], window['rtt_end'], window['peg_strand'], window_df, stop_codons=include_ptcs) 
             peg_df["editing_window"] = x + 1
             final_peg_df = pd.concat([final_peg_df, peg_df])
 
@@ -236,7 +236,7 @@ class clipe_expt:
             window = desired_var_df[(desired_var_df["pos"] >= rtt_start) & (desired_var_df["pos"] <= rtt_end)]
             # count the number of variants in the df
             count = len(window)
-            windows.append({'rtt_start':rtt_start, 'rtt_end':rtt_end, "num_vars":count, "strand":row['strand']}) # store in 1 indexing
+            windows.append({'rtt_start':rtt_start, 'rtt_end':rtt_end, "num_vars":count, "peg_strand":row['strand']}) # store in 1 indexing
 
         # sort the windows by priority
         windows = sorted(windows, key=lambda x: x['num_vars'], reverse=True)
@@ -246,16 +246,16 @@ class clipe_expt:
         for window in windows:
             if not any([window['rtt_start'] <=  tw['rtt_start'] <= window['rtt_end'] or window['rtt_start'] <= tw['rtt_end'] <= window['rtt_end'] for tw in top_windows]):
                 top_windows.append(window)
-                #print(f"Window: {window['rtt_start']}-{window['rtt_end']}, # variants: {window['num_vars']}, strand: {window['strand']}")
+                #print(f"Window: {window['rtt_start']}-{window['rtt_end']}, # variants: {window['num_vars']}, strand: {window['peg_strand']}")
             if len(top_windows) == self.num_windows:
                 break
         
         return top_windows
 
 
-    def design_pegrnas(self, window_start, window_end, strand, window_df, stop_codons=False):
+    def design_pegrnas(self, window_start, window_end, peg_strand, window_df, stop_codons=False):
         # convert back to 0 indexing
-        if strand == "+":
+        if peg_strand == "+":
             spacer_start = window_start-18 
             spacer_end = window_start+1
             spacer = self.ref_fasta[spacer_start:spacer_end+1]
@@ -263,7 +263,7 @@ class clipe_expt:
 
             rtt_rev_temp = self.ref_fasta[window_start-1:window_end]
             pbs_rev = self.ref_fasta[window_start-self.pbs_len-1:window_start-1]
-        elif strand == "-":
+        elif peg_strand == "-":
             spacer_start = window_end-3
             spacer_end = window_end+16
             spacer = str(Seq(self.ref_fasta[spacer_start:spacer_end+1]).reverse_complement())
@@ -284,10 +284,10 @@ class clipe_expt:
                 raise ValueError("WARNING ALERT DEVELOPER: ClinVar reference doesn't match hg38 fasta")
             rtt_rev = rtt_rev_temp[:local_edit_pos] + row['alt'].lower() + rtt_rev_temp[local_edit_pos+1:]
             
-            if strand == "-":
+            if peg_strand == "-":
                 rtt_rev = str(Seq(rtt_rev).reverse_complement())
             
-            pegrna_data[row['var_id']] = {'strand':strand, 'spacer': spacer, 'pam':pam, 'rtt':rtt_rev, 'pbs':str(Seq(pbs_rev).reverse_complement())}
+            pegrna_data[row['var_id']] = {'strand':peg_strand, 'spacer': spacer, 'pam':pam, 'rtt':rtt_rev, 'pbs':str(Seq(pbs_rev).reverse_complement())}
 
         peg_df = pd.DataFrame(pegrna_data).transpose().reset_index()
         merged_df = pd.merge(window_df, peg_df, left_on='var_id', right_on='index', how='left')
@@ -298,10 +298,10 @@ class clipe_expt:
         merged_df = merged_df.sort_values("pos")
 
         if stop_codons:
-            merged_df = self.introduce_ptcs(merged_df, rtt_rev_temp, window_start, window_end, strand)
+            merged_df = self.introduce_ptcs(merged_df, rtt_rev_temp, window_start, window_end, peg_strand)
 
         # add nicking guides
-        merged_df['nicking sgrna'], merged_df['distance_to_nick'] = self.pick_nicking_guide(window_start, strand)
+        merged_df['nicking sgrna'], merged_df['distance_to_nick'] = self.pick_nicking_guide(window_start, peg_strand)
  
         return merged_df
 
@@ -315,8 +315,13 @@ class clipe_expt:
         # get the sequence of the variant + ~60 bp on either side
         padding_input = 102 
         # ensures reading frame is maintained
-        l_padding = padding_input + reading_frame - 1
-        r_padding = padding_input - reading_frame + 3
+        if self.coding_strand == "+":
+            l_padding = padding_input + reading_frame - 1
+            r_padding = padding_input - reading_frame + 3
+        else:
+            l_padding = padding_input - reading_frame + 3
+            r_padding = padding_input + reading_frame - 1
+
         ref_seq = self.ref_fasta[pos - l_padding-1 : pos + r_padding]
         # add the edit to the sequence
         alt_seq = ref_seq[:l_padding] + alt + ref_seq[l_padding + 1 :]
@@ -332,7 +337,7 @@ class clipe_expt:
     # TODO: DO I NEED THIS
     def find_spacer(self, ref_seq, spacer):
         # input validation: find spacer in the input
-        orientation = 1
+        orientation = "+"
         spacer_start = ref_seq.find(spacer)
         if spacer_start == -1:
             ref_seq = str(Seq(ref_seq).reverse_complement())
@@ -340,7 +345,7 @@ class clipe_expt:
             if spacer_start == -1:
                 return "spacer not found", -1, -1
             else:
-                orientation = -1
+                orientation = "-"
         spacer_end = spacer_start + len(spacer)
 
         return spacer_start, spacer_end, orientation
@@ -374,18 +379,18 @@ class clipe_expt:
         pam_status = "-"
 
         # find spacer in the input
-        spacer_start, spacer_end, orientation = self.find_spacer(ref_seq, spacer)
+        spacer_start, spacer_end, peg_strand = self.find_spacer(ref_seq, spacer)
         
         # boolean if codons need to be reverse comp'd based on coding strand and spacer orientation
-        codon_flip = ((orientation == -1 and self.coding_strand == "+") or (orientation == 1 and self.coding_strand == "-"))
+        codon_flip = ((peg_strand == "-" and self.coding_strand == "+") or (peg_strand == "+" and self.coding_strand == "-"))
+        
+        if peg_strand == "-":
+            ref_seq = str(Seq(ref_seq).reverse_complement())
+            alt_seq = str(Seq(alt_seq).reverse_complement())
 
         if spacer_start == "spacer not found":
             warnings.append("!!spacer not found in reference seq!!")
             return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
-
-        if orientation == -1:
-            ref_seq = str(Seq(ref_seq).reverse_complement())
-            alt_seq = str(Seq(alt_seq).reverse_complement())
 
         # check if pam has been disrupted by edit
         ref_pam = ref_seq[spacer_end:spacer_end + 3]
@@ -429,6 +434,7 @@ class clipe_expt:
 
         for x, orig_codon in enumerate(pam_codons):
             for change in syn_codon_changes[orig_codon]:
+                # flip back to original orientation if previously flipped
                 syn_codon = str(Seq(change["syn_codon"]).reverse_complement()) if codon_flip else change["syn_codon"]
                 if len(pam_codons) == 1:
                     new_pam_region = syn_codon
@@ -561,23 +567,18 @@ class clipe_expt:
             warnings.append("More than one AA change in the edited sequence")
         if len(aa_changes) == 0:
             warnings.append("No AA change in the edited sequence")
-
-        #if len(warnings) > 1 and warnings!=["No synonymous changes disrupt the seed or PAM"]:
-            #print(warnings)
         
         return str(rtt_rc), pam_status, seed_status, str(aa_changes), warnings
 
-    def introduce_ptcs(self, merged_df,rtt_rev_temp, start, end, strand):
-        # find first codon in rtt
-        codon_flip = ((strand == "-" and self.coding_strand == "+") or (strand == "+" and self.coding_strand == "-"))
+    def find_first_codon(self, peg_df, start, end, codon_flip):
         if not codon_flip:
-            first_rtt_variant = merged_df.iloc[0]
+            first_rtt_variant = peg_df.iloc[0]
             first_var_location = first_rtt_variant['pos'] - start
-            last_rtt_variant = merged_df.iloc[-1]
+            last_rtt_variant = peg_df.iloc[-1]
         else:
-            first_rtt_variant = merged_df.iloc[-1]
+            first_rtt_variant = peg_df.iloc[-1]
             first_var_location = end - first_rtt_variant['pos']
-            last_rtt_variant = merged_df.iloc[0]
+            last_rtt_variant = peg_df.iloc[0]
         
         if not codon_flip:
             first_codon_idx = first_var_location - first_rtt_variant["read_frame_pos"] + 1
@@ -589,6 +590,13 @@ class clipe_expt:
                 first_codon_idx +=3
             if first_codon_idx > 2:
                 first_codon_idx -= 3
+        
+        return first_codon_idx, last_rtt_variant
+
+    def introduce_ptcs(self, merged_df,rtt_rev_temp, window_start, window_end, strand):
+        # find first codon in rtt
+        codon_flip = ((strand == "-" and self.coding_strand == "+") or (strand == "+" and self.coding_strand == "-"))
+        first_codon_idx, last_rtt_variant = self.find_first_codon(merged_df, window_start, window_end, codon_flip)
 
         if strand == "-":
             rtt_rev_temp = str(Seq(rtt_rev_temp).reverse_complement())
@@ -613,7 +621,7 @@ class clipe_expt:
                 pam_status = "stop codon disrupts PAM/seed region"
                 seed_status = "-"
                 
-            pos = start + index if strand == "+" else end - index
+            pos = window_start + index if strand == "+" else window_end - index
 
             # check for aa changes:
             aa_changes = self.find_aa_changes(rtt_rev_temp[first_codon_idx:], rtt_rev[first_codon_idx:], codon_flip)
@@ -764,15 +772,15 @@ def main():
     NUM_WINDOWS = 10
     DISRUPT_PAMS = True
     DESIGN_STRAT = "vus"
-    INCLUSION_TYPES = ['BLB', 'PLP', 'GNOMAD', 'PTC']
+    INCLUSION_TYPES = ['BLB', 'PLP', 'GNOMAD']#, 'PTC']
     ALLELE_COUNT_MIN = 10
 
-    TRANSCRIPT_NAME = 'NM_000548.5'
-    CLINVAR_PATH = './input/clinvar_result.txt'
-    GNOMAD_PATH = './input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv'
+    TRANSCRIPT_NAME = 'NM_001270.4'
+    CLINVAR_PATH = '/Users/nico/Downloads/clinvar_result-3.txt'
+    GNOMAD_PATH = None #'./input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv'
     expt = clipe_expt(TRANSCRIPT_NAME, CLINVAR_PATH, GNOMAD_PATH, PBS_LEN, RTT_LEN, NUM_WINDOWS, DISRUPT_PAMS, DESIGN_STRAT, INCLUSION_TYPES, ALLELE_COUNT_MIN)
-    final_df = expt.run_guide_design()
-    
+    final_df, windows = expt.run_guide_design()
+
     final_df.to_csv("test.csv")
 
     df, fa_txt = expt.build_files_for_jellyfish(final_df)
@@ -780,4 +788,4 @@ def main():
         f.write(fa_txt)
     df.to_csv("fish.tsv", sep="\t", index=False)
 
-#main()
+main()
