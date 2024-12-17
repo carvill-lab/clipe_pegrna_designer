@@ -11,6 +11,6 @@
   filter: var(--bs-btn-close-white-filter);
 }
 
-.fa {
-  font-size: 12px;
+body {
+  font-size: 14px;
 }

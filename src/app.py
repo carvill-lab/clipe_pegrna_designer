@@ -36,26 +36,24 @@ app_ui = ui.page_navbar(
         ui.sidebar(
             ui.input_radio_buttons(
             "design_strategy",
-            "Design strategy:",
+            ui.span("Design strategy:", style="text-decoration: underline;"),
             {
                 "vus": "Introduce missense VUS variants",
                 "pos_control": "Introduce missense PLP/BLB variants",
             },
             width="100%",
             ),
-            #ui.input_text("GeneName", label="Gene Name", value="TSC2"),
             ui.input_selectize("gene", label="Gene Name", choices=[], width="100%"),
-            #ui.input_text("transcript", label="Transcript (Refseq)", value="NM_000548.5"),
             ui.input_select("transcript", label="Transcript (Refseq)", choices=[], width="100%"),
             ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1, min=1),
             ui.input_file("clinvar_csv", "Choose missense ClinVar csv to upload:", multiple=False),
             ui.input_file("gnomad_csv", "Choose gnomAD csv to upload:", multiple=False),
             ui.input_checkbox_group(  
                 "checkbox_group",  
-                "Include additional variants in editing windows:",  
+                ui.span("Include additional variants in editing windows:", style="text-decoration: underline;"),  
                 {  
-                    "BLB": "BLB variants (ClinVar)",  
-                    "PLP": "PLP Variants (ClinVar)",  
+                    "BLB": "Benign/Likely Benign variants",  
+                    "PLP": "Pathogenic/Likely Pathogenic variants",  
                     "GNOMAD": "gnomAD variants with allele count >= 5",
                     "PTC": "PTC variants to induce LoF for assay validation/calibration",  
                 },
@@ -68,7 +66,9 @@ app_ui = ui.page_navbar(
                 ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
                 ),id="additional_options", multiple=False, open=False),
             open="desktop",
-            width=400
+            width=375,
+            padding=20,
+            fillable=True,
         ),
         ui.layout_columns(
             # ui.value_box(
@@ -101,7 +101,7 @@ app_ui = ui.page_navbar(
                     "Downloads",
                     class_="d-flex justify-content-between align-items-center",
                 ),
-                ui.output_ui("download_area", ),
+                ui.output_ui("download_area"),
             ),
             ui.card(
                 ui.card_header(
@@ -109,13 +109,12 @@ app_ui = ui.page_navbar(
                     class_="d-flex justify-content-between align-items-center",
                 ),
                 output_widget("peg_dist_chart"),
-                #full_screen=True,
             ),
-            col_widths=[6, 6, 12],
+            col_widths=[8, 4, 12],
+            fillable=True,
         ),
         ui.include_css(app_dir / "styles.css"),
-        fillable=True,
-        )
+        ),
     ),
     ui.nav_spacer(),
     ui.nav_control(ui.a('CliPE Home', href='http://calhoujd.github.io', target="_blank",)),
@@ -124,6 +123,7 @@ app_ui = ui.page_navbar(
 
     title=ui.img(src="clipe_logo.png", alt="clipe logo", height="50px"),
     window_title="CliPE pegRNA Designer",
+    fillable=True,
 )
 
 
@@ -180,7 +180,7 @@ def server(input, output, session):
         ui.insert_ui(
             ui.input_checkbox_group(  
             "download_checkbox",  
-            "Download the following files:",  
+            ui.span("Download the following files:", style="font-weight: bold;"),  
             {  
             "peg_tables": "pegRNA design tables (.csv)",  
             "RTTs": "RTT data for downstream analyses (.csv, .fa)",
@@ -230,8 +230,8 @@ def server(input, output, session):
         ui.update_checkbox_group(  
             "checkbox_group",  
             choices= {  
-                "BLB": "BLB variants (ClinVar)",  
-                "PLP": "PLP Variants (ClinVar)",  
+                "BLB": "Benign/Likely Benign variants",  
+                "PLP": "Pathogenic/Likely Pathogenic variants",  
                 "GNOMAD": f"gnomAD variants with allele count >= {input.allele_min()}",
                 "PTC": "PTC variants to induce LoF for assay validation/calibration",  
             })
