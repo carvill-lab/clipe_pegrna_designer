@@ -111,6 +111,7 @@ app_ui = ui.page_navbar(
                 output_widget("peg_dist_chart"),
             ),
             col_widths=[8, 4, 12],
+            row_heights=(2,1),
             fillable=True,
         ),
         ui.include_css(app_dir / "styles.css"),
