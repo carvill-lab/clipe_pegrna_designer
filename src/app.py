@@ -114,6 +114,7 @@ app_ui = ui.page_navbar(
             fillable=True,
         ),
         ui.include_css(app_dir / "styles.css"),
+        fillable=True,
         ),
     ),
     ui.nav_spacer(),
