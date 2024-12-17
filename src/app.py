@@ -5,6 +5,7 @@ import plotly.graph_objs as go
 from datetime import date
 from clipe_guide_design_methods import *
 import os
+import tempfile
 import shutil
 
 # Load data and compute static values
@@ -183,9 +184,9 @@ def server(input, output, session):
         files_to_download = input.download_checkbox()
         if len(files_to_download) > 0:
             file_prefix = f"{input.gene()}_"
-            path = Path(__file__).parent / f"{date.today()}_{file_prefix}clipe_designs"
+            temp_dir = tempfile.TemporaryDirectory()
+            path = Path(temp_dir.name) / f"{date.today()}_{file_prefix}clipe_designs"
             os.makedirs(path, exist_ok=True)
-
             if "peg_tables" in files_to_download:
                 peg_df.to_csv(path / f"{file_prefix}full_pegRNA_designs.csv", index=False)
             if "RTTs" in files_to_download:
@@ -197,7 +198,6 @@ def server(input, output, session):
                 idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
                 idt_df.columns = ["Pool name", "Sequence"]
                 idt_df.to_excel(path / f"{file_prefix}IDT_order_data.xlsx", index=False)
-            
             zip_path = shutil.make_archive(path, 'zip', path)
             shutil.rmtree(path)
             return str(zip_path)
