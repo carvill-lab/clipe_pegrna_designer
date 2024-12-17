@@ -13,7 +13,7 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
 app_dir = Path(__file__).parent
-gene_data = pd.read_csv(app_dir / "genome_files/hg38_transcripts.tsv", sep="\t")
+gene_data = pd.read_csv(app_dir / "files/hg38_transcripts.tsv", sep="\t")
 gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
@@ -30,88 +30,98 @@ gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 # }
 
 # Add page title and sidebar
-app_ui = ui.page_sidebar(
-    ui.sidebar(
-        ui.input_radio_buttons(
-         "design_strategy",
-         "Design strategy:",
-         {
-             "vus": "Introduce missense VUS variants",
-             "pos_control": "Introduce missense PLP/BLB variants",
-         },
-         width="100%",
-        ),
-        #ui.input_text("GeneName", label="Gene Name", value="TSC2"),
-        ui.input_selectize("gene", label="Gene Name", choices=[], width="100%"),
-        #ui.input_text("transcript", label="Transcript (Refseq)", value="NM_000548.5"),
-        ui.input_select("transcript", label="Transcript (Refseq)", choices=[], width="100%"),
-        ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1, min=1),
-        ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
-        ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
-        ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
-        ui.input_file("clinvar_csv", "Choose missense ClinVar csv to upload:", multiple=False),
-        ui.input_file("gnomad_csv", "Choose gnomAD csv to upload:", multiple=False),
-        ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
-        ui.input_checkbox_group(  
-            "checkbox_group",  
-            "Include additional variants in editing windows:",  
-            {  
-                "BLB": "BLB variants (ClinVar)",  
-                "PLP": "PLP Variants (ClinVar)",  
-                "GNOMAD": "gnomAD variants with allele count >= 5",
-                "PTC": "PTC variants to induce LoF for assay validation/calibration",  
+app_ui = ui.page_navbar( 
+    ui.nav_panel("CliPE pegRNA Designer", 
+        ui.page_sidebar(
+        ui.sidebar(
+            ui.input_radio_buttons(
+            "design_strategy",
+            "Design strategy:",
+            {
+                "vus": "Introduce missense VUS variants",
+                "pos_control": "Introduce missense PLP/BLB variants",
             },
-            width="100%"),
-        ui.input_action_button("action_button", "Design epegRNA Libraries"),
-        open="desktop",
-        width=400
-    ),
-    ui.layout_columns(
-        # ui.value_box(
-        #     "Editing Windows", ui.output_ui("total_windows"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        # ),
-        ui.value_box(
-            "# pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        ),
-        ui.value_box(
-            "# VUS variants", ui.output_ui("total_vus"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        ),
-        ui.value_box(
-            "# PLP variants", ui.output_ui("total_plp"),  theme= ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        ),
-        ui.value_box(
-            "# BLB variants", ui.output_ui("total_blb"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        ),
-        # ui.value_box(
-        #     "Gnomad variants", ui.output_ui("total_gnomad"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-        # ),
-        fill=False,
-        #max_height="100px",
-    ),
-    ui.layout_columns(
-        ui.card(
-            ui.card_header("pegRNA designs"), ui.output_data_frame("build_peg_df"), full_screen=True
-        ),
-        ui.card(
-            ui.card_header(
-                "Downloads",
-                class_="d-flex justify-content-between align-items-center",
+            width="100%",
             ),
-            ui.output_ui("download_area", ),
+            #ui.input_text("GeneName", label="Gene Name", value="TSC2"),
+            ui.input_selectize("gene", label="Gene Name", choices=[], width="100%"),
+            #ui.input_text("transcript", label="Transcript (Refseq)", value="NM_000548.5"),
+            ui.input_select("transcript", label="Transcript (Refseq)", choices=[], width="100%"),
+            ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1, min=1),
+            ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
+            ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
+            ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
+            ui.input_file("clinvar_csv", "Choose missense ClinVar csv to upload:", multiple=False),
+            ui.input_file("gnomad_csv", "Choose gnomAD csv to upload:", multiple=False),
+            ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
+            ui.input_checkbox_group(  
+                "checkbox_group",  
+                "Include additional variants in editing windows:",  
+                {  
+                    "BLB": "BLB variants (ClinVar)",  
+                    "PLP": "PLP Variants (ClinVar)",  
+                    "GNOMAD": "gnomAD variants with allele count >= 5",
+                    "PTC": "PTC variants to induce LoF for assay validation/calibration",  
+                },
+                width="100%"),
+            ui.input_action_button("action_button", "Design epegRNA Libraries"),
+            open="desktop",
+            width=400
         ),
-        ui.card(
-            ui.card_header(
-                "pegRNA distribution",
-                class_="d-flex justify-content-between align-items-center",
+        ui.layout_columns(
+            # ui.value_box(
+            #     "Editing Windows", ui.output_ui("total_windows"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            # ),
+            ui.value_box(
+                "# pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
             ),
-            output_widget("peg_dist_chart"),
-            #full_screen=True,
+            ui.value_box(
+                "# VUS variants", ui.output_ui("total_vus"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            ),
+            ui.value_box(
+                "# PLP variants", ui.output_ui("total_plp"),  theme= ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            ),
+            ui.value_box(
+                "# BLB variants", ui.output_ui("total_blb"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            ),
+            # ui.value_box(
+            #     "Gnomad variants", ui.output_ui("total_gnomad"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+            # ),
+            fill=False,
+            #max_height="100px",
         ),
-        col_widths=[6, 6, 12],
+        ui.layout_columns(
+            ui.card(
+                ui.card_header("pegRNA designs"), ui.output_data_frame("build_peg_df"), full_screen=True
+            ),
+            ui.card(
+                ui.card_header(
+                    "Downloads",
+                    class_="d-flex justify-content-between align-items-center",
+                ),
+                ui.output_ui("download_area", ),
+            ),
+            ui.card(
+                ui.card_header(
+                    "pegRNA distribution",
+                    class_="d-flex justify-content-between align-items-center",
+                ),
+                output_widget("peg_dist_chart"),
+                #full_screen=True,
+            ),
+            col_widths=[6, 6, 12],
+        ),
+        ui.include_css(app_dir / "styles.css"),
+        fillable=True,
+        )
     ),
-    ui.include_css(app_dir / "styles.css"),
-    title="CliPE pegRNA Designer",
-    fillable=True,
+    ui.nav_spacer(),
+    ui.nav_control(ui.a('CliPE Home', href='http://calhoujd.github.io', target="_blank",)),
+    ui.nav_control(ui.a('Carvill Lab', href='https://sites.northwestern.edu/carvilllab/', target="_blank",)),
+    ui.nav_control(ui.a(ui.img(src="https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png", alt="Github", height="25px"), href='https://github.com/nbodkin/clipe_pegrna_builder', target="_blank")),
+
+    title=ui.img(src="clipe_logo.png", alt="clipe logo", height="50px"),
+    window_title="CliPE pegRNA Designer",
 )
 
 
@@ -300,4 +310,4 @@ def server(input, output, session):
         
         return fig
 
-app = App(app_ui, server)
+app = App(app_ui, server, static_assets=app_dir / "www")
