@@ -134,9 +134,24 @@ class clipe_expt:
         clinvar_df['pos'] = clinvar_df['GRCh38Location'].astype(int)
         clinvar_df['ref'] = clinvar_df['snv'].apply(lambda x: x[0])
         clinvar_df['alt'] = clinvar_df['snv'].apply(lambda x: x[-1])
-        clinvar_df['var_id'] = clinvar_df.apply(lambda x: f"{x['chr']}_{x['pos']}_{x['ref']}_{x['alt']}", axis=1)
         clinvar_df = process_reading_frame(clinvar_df, 'Name')
+
+        # capture gene orientation
+        clinvar_df.sort_values("pos")
+        if clinvar_df['coding_pos'].iloc[0] < clinvar_df['coding_pos'].iloc[-1]:
+            coding_strand = "+"
+        elif clinvar_df['coding_pos'].iloc[-1] < clinvar_df['coding_pos'].iloc[0]:
+            coding_strand = "-"
+        else:
+            print("Error: gene strand could not be identified")
+            raise ValueError("Alert Developer - gene strand could not be identified")
         
+        if coding_strand == "-":
+            # necessary as clinvar reports ref and alt on the coding strand. This code reports all variation on the + strand
+            clinvar_df['ref'] = clinvar_df['ref'].apply(lambda x: str(Seq(x).reverse_complement()))
+            clinvar_df['alt'] = clinvar_df['alt'].apply(lambda x: str(Seq(x).reverse_complement()))
+
+        clinvar_df['var_id'] = clinvar_df.apply(lambda x: f"{x['chr']}_{x['pos']}_{x['ref']}_{x['alt']}", axis=1)
         # clean up df
         clinvar_df = clinvar_df[['var_id', 'chr', 'pos', 'ref', 'alt', 'protein_change', 'coding_pos', 'read_frame_pos', 'Germline classification']]
         if gnomad_csv_path:
@@ -170,16 +185,6 @@ class clipe_expt:
 
         # print df of variants not in var_df but in orig_clinvar_df (excluded variants from upload)
         #excluded_variants = orig_clinvar_df[~orig_clinvar_df['Name'].isin(var_df['Name'])]
-
-        # capture gene orientation
-        clinvar_df.sort_values("pos")
-        if clinvar_df['coding_pos'].iloc[0] < clinvar_df['coding_pos'].iloc[-1]:
-            coding_strand = "+"
-        elif clinvar_df['coding_pos'].iloc[-1] < clinvar_df['coding_pos'].iloc[0]:
-            coding_strand = "-"
-        else:
-            print("Error: gene strand could not be identified")
-            raise ValueError("Alert Developer - gene strand could not be identified")
 
         return var_df, coding_strand
     
