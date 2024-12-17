@@ -615,20 +615,24 @@ class clipe_expt:
 
             if index > 5:
                 rtt_rev = pam_disrupt_rtt + rtt_rev[6:]
-                pam_status = last_rtt_variant['pam_status']
-                seed_status = last_rtt_variant['seed_status']
+                if 'pam_status' in last_rtt_variant:
+                    pam_status = last_rtt_variant['pam_status']
+                    seed_status = last_rtt_variant['seed_status']
             else:
                 pam_status = "stop codon disrupts PAM/seed region"
                 seed_status = "-"
-                
+                 
             pos = window_start + index if strand == "+" else window_end - index
 
             # check for aa changes:
             aa_changes = self.find_aa_changes(rtt_rev_temp[first_codon_idx:], rtt_rev[first_codon_idx:], codon_flip)
             warnings = ["error with ptc introduction"] if (len(aa_changes) != 1 or '->End' not in aa_changes[0]) else []
 
-            # add in additional details
-            stop_rtts.append({'var_id': "PTC_" + str(ptc_num)+"_"+str(pos), 'chr': last_rtt_variant['chr'], 'pos': pos, 'strand':strand, 'spacer': last_rtt_variant['spacer'], 'pam':last_rtt_variant['pam'], 'rtt':rtt_rev, 'pbs':last_rtt_variant['pbs'], 'pam_status': pam_status, 'seed_status': seed_status, 'aa_change': str(aa_changes), 'warnings': warnings})
+            ptc_data = {'var_id': "PTC_" + str(ptc_num)+"_"+str(pos), 'chr': last_rtt_variant['chr'], 'pos': pos, 'strand':strand, 'spacer': last_rtt_variant['spacer'], 'pam':last_rtt_variant['pam'], 'rtt':rtt_rev, 'pbs':last_rtt_variant['pbs']}
+            if 'pam_status' in last_rtt_variant:
+                ptc_data.update({'pam_status': pam_status, 'seed_status': seed_status, 'aa_change': str(aa_changes), 'warnings': warnings})
+                
+            stop_rtts.append(ptc_data)
             index += 3
             ptc_num +=1
         
