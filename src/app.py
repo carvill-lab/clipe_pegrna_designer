@@ -17,6 +17,9 @@ gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 
+cds_data = pd.read_csv(app_dir / "genome_files/hg38_transcript_coords.tsv", sep="\t")
+cds_data['cds_lengths'] = cds_data['cds_lengths'].apply(eval)
+
 example_clinvar_path = str(app_dir / "example_input/clinvar_result.txt")
 example_gnomad_path = str(app_dir / "example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv")
 
@@ -279,11 +282,17 @@ def server(input, output, session):
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] != 0:
             df_to_plot = peg_df.copy().dropna(subset=["coding_pos"])
+            if df_to_plot.shape[0] == 0:
+                return go.Figure()
+            
             x = [int(i) for i in list(df_to_plot["coding_pos"])]
+            transcript_data = cds_data[cds_data['transcript_id'] == input.transcript().split(" ")[0]]
+            cds_lengths = transcript_data['cds_lengths'].iloc[0]
+            total_cds_length = sum(cds_lengths)
 
             layout = go.Layout(
                 yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
-                xaxis = dict(range=[0, max(x)+10]),
+                xaxis = dict(range=[1, total_cds_length]),
                 plot_bgcolor='white',  # Change background to white
                 title=input.gene() + " PE windows",
             )
@@ -292,13 +301,27 @@ def server(input, output, session):
 
             fig.add_shape(
                 type="rect",
-                x0=0,
+                x0=1,
                 y0=-.3,
-                x1=max(x)+10,
+                x1=total_cds_length,
                 y1=.3,
                 line_width=3,
                 opacity=0.8,
             )
+            cds_pos = 1
+            for i, cds_endpoint in enumerate(cds_lengths):
+                cds_pos += cds_endpoint
+                fig.add_trace(go.Scatter(
+                    x=[cds_pos, cds_pos],
+                    y=[-.3, .3],
+                    mode="lines",
+                    line=dict(color="Gray", dash="dot"),
+                    line_width=.5,
+                    hoverinfo="text",
+                    text=f"Exon {i+1}",
+                    showlegend=False
+                ))
+
             windows = df_to_plot.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
             for _, window in windows.iterrows():
                 fig.add_shape(
