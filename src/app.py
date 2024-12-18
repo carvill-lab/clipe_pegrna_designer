@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objs as go
 from datetime import date
+from Bio.Seq import Seq
 from clipe_guide_design_methods import *
 import tempfile
 import shutil
@@ -204,8 +205,9 @@ def server(input, output, session):
             "peg_tables": "pegRNA design tables (.csv)",  
             "RTTs": "RTT data for downstream analyses (.csv, .fa)",
             "idt": "IDT oPool ordering files (.xlsx)",
+            "nicking_idt": "IDT nicking guide ordering files (.txt)"
             },
-            width="100%", selected=["peg_tables", "RTTs", "idt"]),
+            width="100%", selected=["peg_tables", "RTTs", "idt", "nicking_idt"]),
             selector="#download_area",
             where="afterEnd",
         )
@@ -234,7 +236,23 @@ def server(input, output, session):
                     idt_df = peg_df[['editing_window', "full_peg"]]
                     idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
                     idt_df.columns = ["Pool name", "Sequence"]
-                    idt_df.to_excel(temp_path / f"{file_prefix}IDT_order_data.xlsx", index=False)
+                    idt_df.to_excel(temp_path / f"{file_prefix}IDT_opool_order_data.xlsx", index=False)
+                if "nicking_idt" in files_to_download:
+                    nick_df = peg_df[['nicking sgrna', 'editing_window']].drop_duplicates()
+                    nick_df['name'] = nick_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}_nick")
+                    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "g" + x if x[0] != "G" else  x)
+                    rev_comp_df = nick_df.copy()
+                    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: str(Seq(x).reverse_complement()))
+                    nick_df['name'] = nick_df['name'].apply(lambda x: f"{x}_top")
+                    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "cacc" + x)
+                    rev_comp_df['name'] = rev_comp_df['name'].apply(lambda x: f"{x}_bottom")
+                    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: "aaac" + x)
+                    nick_df = pd.concat([nick_df, rev_comp_df])
+                    nick_df['scale'] = "25nm"
+                    nick_df['purification'] = "STD"
+                    nick_df.sort_values("editing_window", inplace=True)
+                    nick_df[['name', 'nicking sgrna', 'scale', 'purification']].to_csv(temp_path / f"{file_prefix}IDT_nicking_order_data.txt", sep="\t", index=False, header=False)
+                    
                 zip_path = shutil.make_archive(temp_path, 'zip', temp_path)
                 # yield zip file data
                 with open(zip_path, "rb") as f:
