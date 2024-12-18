@@ -17,6 +17,9 @@ gene_data = pd.read_csv(app_dir / "genome_files/hg38_transcripts.tsv", sep="\t")
 gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
+example_clinvar_path = str(app_dir / "example_input/clinvar_result.txt")
+example_gnomad_path = str(app_dir / "example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv")
+example = False
 
 
 # ICONS = {
@@ -30,8 +33,8 @@ gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 # }
 
 # Add page title and sidebar
-app_ui = ui.page_navbar( 
-    ui.nav_panel("CliPE pegRNA Designer", 
+app_ui = ui.page_navbar(
+    ui.nav_panel("pegRNA Designer", 
         ui.page_sidebar(
         ui.sidebar(
             ui.input_radio_buttons(
@@ -58,7 +61,7 @@ app_ui = ui.page_navbar(
                     "PTC": "PTC variants to induce LoF for assay validation/calibration",  
                 },
                 width="100%"),
-            ui.input_action_button("action_button", "Design epegRNA Libraries"),
+            ui.span(ui.input_action_button("action_button", "Design epegRNA Libraries"), style="align-self: center;"),
             ui.accordion(ui.accordion_panel('Additional Options',
                 ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
                 ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
@@ -128,51 +131,63 @@ app_ui = ui.page_navbar(
     fillable=True,
 )
 
-
 def server(input, output, session):
     ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
 
     @reactive.effect
     @reactive.event(input.gene)
     def _():
+        ui.remove_ui("#example_span")
         if input.gene() == "":
             choices = []
         else:
             choices = gene_data_dict[input.gene()]
             ui.update_select("transcript", choices=choices)
+        ui.insert_ui(ui.span(ui.input_action_link("example", "Design with TSC2 example"), style="align-self: center;", id="example_span"),
+                     selector="#additional_options", where="beforeBegin")
     
-    @reactive.effect
+    #@reactive.effect
     @reactive.event(input.example)
     def _():
-        #TODO: example input with default csvs
-        ui.update_checkbox_group("checkbox_group", selected=["BLB", "PLP", "PTC"])
-    
-    
+        ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
+        #ui.update_select("transcript", choices=gene_data_dict["TSC2"], selected="NM_000548.5 (MANE)")
+        ui.update_numeric("num_designs", value=4)
+        global example
+        example = True
 
     @render.data_frame
-    @reactive.event(input.action_button)
+    @reactive.event(input.action_button, input.example)
     def build_peg_df():
         # remove download button if it exists
         ui.remove_ui("#download_button")
         ui.remove_ui("#download_checkbox")
-        global peg_df, fish_df, fish_fa_txt#, windows
+        global peg_df, fish_df, fish_fa_txt, example#, windows
+        print(example)
         peg_df = pd.DataFrame()
-        # validate input files exist
-        if not input.clinvar_csv():
-            raise ValueError("Clinvar file must be provided")
-        if not input.gnomad_csv():
-            gnomad_file = None
-        else:
-            gnomad_file = input.gnomad_csv()[0]["datapath"]
-        
+
         if input.disrupt_pam() == "yes":
             disrupt_pam = True
         else:
             disrupt_pam = False
-    
-        expt = clipe_expt(input.transcript().split(" ")[0], input.clinvar_csv()[0]["datapath"], gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
+        
+        # validate input files exist
+        if example:
+            clinvar_file = example_clinvar_path
+            gnomad_file = example_gnomad_path
+        else:
+            if not input.clinvar_csv():
+                raise ValueError("Clinvar file must be provided")
+            else:
+                clinvar_file = input.clinvar_csv()[0]["datapath"]
+            if not input.gnomad_csv():
+                gnomad_file = None
+            else:
+                gnomad_file = input.gnomad_csv()[0]["datapath"]
+        
+        expt = clipe_expt(input.transcript().split(" ")[0], clinvar_file, gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
         peg_df, windows = expt.run_guide_design()
         fish_df, fish_fa_txt = expt.build_files_for_jellyfish(peg_df)
+        
         # TODO: reduce sig figs in allele percentage
         ui.insert_ui(
             ui.download_button("download_button", "Download selected files", width="60%"),
@@ -192,6 +207,8 @@ def server(input, output, session):
             selector="#download_area",
             where="afterEnd",
         )
+        
+        example = False
 
         return peg_df
 
@@ -219,12 +236,6 @@ def server(input, output, session):
                     x = f.read()
                 yield(x)
 
-    # @render.ui
-    # @reactive.event(input.action_button)
-    # def total_windows():
-    #     if peg_df.shape[0] > 0:
-    #         windows = peg_df["editing_window"].nunique()
-    #         return windows
 
     @reactive.effect
     @reactive.event(input.allele_min)
@@ -240,41 +251,32 @@ def server(input, output, session):
         return 
 
     @render.ui
-    @reactive.event(input.action_button)
+    @reactive.event(input.action_button, input.example)
     def total_pegs():
         if peg_df.shape[0] > 0:
             return peg_df.shape[0]
 
     @render.ui
-    @reactive.event(input.action_button)
+    @reactive.event(input.action_button, input.example)
     def total_vus():
         if peg_df.shape[0] > 0:
             return peg_df[peg_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])].shape[0]
         
     @render.ui
-    @reactive.event(input.action_button)
+    @reactive.event(input.action_button, input.example)
     def total_plp():
         if peg_df.shape[0] > 0:
             return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])].shape[0]
         
     
     @render.ui
-    @reactive.event(input.action_button)
+    @reactive.event(input.action_button, input.example)
     def total_blb():
         if peg_df.shape[0] > 0:
             return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])].shape[0]
 
-    # @render.ui
-    # @reactive.event(input.action_button)
-    # def total_gnomad():
-    #     if peg_df.shape[0] > 0:
-    #         if 'Allele Count' in peg_df:
-    #             return peg_df[peg_df['Allele Count'] >= input.allele_min()].shape[0]
-    #         else:
-    #             return 0
-
     @render_plotly
-    @reactive.event(input.action_button)
+    @reactive.event(input.action_button, input.example)
     def peg_dist_chart():
     # Generate a random signal
         df_to_plot = peg_df.copy().dropna(subset=["coding_pos"])
@@ -306,8 +308,8 @@ def server(input, output, session):
                 y0=-0.3,
                 x1=window['Finish'],
                 y1=0.3,
-                fillcolor="Red",
-                opacity=.6,
+                fillcolor="darkviolet",
+                opacity=.8,
                 line_width=0,
                 label=dict(text=str(window['editing_window']), font=dict(color="White"))
             )
