@@ -278,6 +278,7 @@ def server(input, output, session):
             return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])].shape[0]
 
     @render_plotly
+    @reactive.event(peg_df_glob, ignore_init=True)
     def peg_dist_chart():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] != 0:
@@ -310,7 +311,6 @@ def server(input, output, session):
             )
             cds_pos = 1
             for i, cds_endpoint in enumerate(cds_lengths):
-                cds_pos += cds_endpoint
                 fig.add_trace(go.Scatter(
                     x=[cds_pos, cds_pos],
                     y=[-.3, .3],
@@ -321,6 +321,7 @@ def server(input, output, session):
                     text=f"Exon {i+1}",
                     showlegend=False
                 ))
+                cds_pos += cds_endpoint
 
             windows = df_to_plot.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
             for _, window in windows.iterrows():
