@@ -19,6 +19,7 @@ gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 
 cds_data = pd.read_csv(app_dir / "genome_files/hg38_transcript_coords.tsv", sep="\t")
 cds_data['cds_lengths'] = cds_data['cds_lengths'].apply(eval)
+cds_data['cds_exons'] = cds_data['cds_exons'].apply(eval)
 
 example_clinvar_path = str(app_dir / "example_input/clinvar_result.txt")
 example_gnomad_path = str(app_dir / "example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv")
@@ -290,6 +291,7 @@ def server(input, output, session):
             transcript_data = cds_data[cds_data['transcript_id'] == input.transcript().split(" ")[0]]
             cds_lengths = transcript_data['cds_lengths'].iloc[0]
             total_cds_length = sum(cds_lengths)
+            cds_exons = transcript_data['cds_exons'].iloc[0]
 
             layout = go.Layout(
                 yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
@@ -318,7 +320,7 @@ def server(input, output, session):
                     line=dict(color="Gray", dash="dot"),
                     line_width=.5,
                     hoverinfo="text",
-                    text=f"Exon {i+1}",
+                    text=f"Exon {cds_exons[i]}",
                     showlegend=False
                 ))
                 cds_pos += cds_endpoint
