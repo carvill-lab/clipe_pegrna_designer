@@ -4,12 +4,11 @@ import pandas as pd
 import plotly.graph_objs as go
 from datetime import date
 from clipe_guide_design_methods import *
-import os
 import tempfile
 import shutil
 
 # Load data and compute static values
-from shiny import App, reactive, render, ui
+from shiny import App, reactive, render, ui, req
 from shinywidgets import output_widget, render_plotly
 
 app_dir = Path(__file__).parent
@@ -17,9 +16,9 @@ gene_data = pd.read_csv(app_dir / "genome_files/hg38_transcripts.tsv", sep="\t")
 gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
+
 example_clinvar_path = str(app_dir / "example_input/clinvar_result.txt")
 example_gnomad_path = str(app_dir / "example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv")
-example = False
 
 
 # ICONS = {
@@ -74,9 +73,6 @@ app_ui = ui.page_navbar(
             fillable=True,
         ),
         ui.layout_columns(
-            # ui.value_box(
-            #     "Editing Windows", ui.output_ui("total_windows"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-            # ),
             ui.value_box(
                 "# pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
             ),
@@ -89,11 +85,7 @@ app_ui = ui.page_navbar(
             ui.value_box(
                 "# BLB variants", ui.output_ui("total_blb"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
             ),
-            # ui.value_box(
-            #     "Gnomad variants", ui.output_ui("total_gnomad"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
-            # ),
             fill=False,
-            #max_height="100px",
         ),
         ui.layout_columns(
             ui.card(
@@ -132,6 +124,12 @@ app_ui = ui.page_navbar(
 )
 
 def server(input, output, session):
+    example_bool = reactive.value(False)
+    example_count = reactive.value(0)
+    peg_df_glob = reactive.value(pd.DataFrame())
+    fish_df_glob = reactive.value(pd.DataFrame())
+    fish_fa_txt_glob = reactive.value("")
+
     ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
 
     @reactive.effect
@@ -143,35 +141,31 @@ def server(input, output, session):
         else:
             choices = gene_data_dict[input.gene()]
             ui.update_select("transcript", choices=choices)
+        
         ui.insert_ui(ui.span(ui.input_action_link("example", "Design with TSC2 example"), style="align-self: center;", id="example_span"),
                      selector="#additional_options", where="beforeBegin")
     
-    #@reactive.effect
+    @reactive.effect
     @reactive.event(input.example)
     def _():
         ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
-        #ui.update_select("transcript", choices=gene_data_dict["TSC2"], selected="NM_000548.5 (MANE)")
-        ui.update_numeric("num_designs", value=4)
-        global example
-        example = True
+        example_bool.set(True)
+        example_count.set(example_count.get()+1)
 
     @render.data_frame
-    @reactive.event(input.action_button, input.example)
+    @reactive.event(input.action_button, example_count, ignore_init=True)
     def build_peg_df():
         # remove download button if it exists
         ui.remove_ui("#download_button")
         ui.remove_ui("#download_checkbox")
-        global peg_df, fish_df, fish_fa_txt, example#, windows
-        print(example)
-        peg_df = pd.DataFrame()
-
+        peg_df_glob.set(pd.DataFrame())
         if input.disrupt_pam() == "yes":
             disrupt_pam = True
         else:
             disrupt_pam = False
         
         # validate input files exist
-        if example:
+        if example_bool.get():
             clinvar_file = example_clinvar_path
             gnomad_file = example_gnomad_path
         else:
@@ -186,7 +180,11 @@ def server(input, output, session):
         
         expt = clipe_expt(input.transcript().split(" ")[0], clinvar_file, gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
         peg_df, windows = expt.run_guide_design()
-        fish_df, fish_fa_txt = expt.build_files_for_jellyfish(peg_df)
+        peg_df_glob.set(peg_df)
+
+        output = expt.build_files_for_jellyfish(peg_df)
+        fish_df_glob.set(output[0])
+        fish_fa_txt_glob.set(output[1])
         
         # TODO: reduce sig figs in allele percentage
         ui.insert_ui(
@@ -208,12 +206,15 @@ def server(input, output, session):
             where="afterEnd",
         )
         
-        example = False
+        example_bool.set(False)
 
         return peg_df
 
     @render.download(filename=lambda: f"{date.today()}_{input.gene()}_clipe_designs.zip")
     def download_button():
+        peg_df = peg_df_glob.get()
+        fish_df = fish_df_glob.get()
+        fish_fa_txt = fish_fa_txt_glob.get()
         files_to_download = input.download_checkbox()
         if len(files_to_download) > 0:
             file_prefix = f"{input.gene()}_"
@@ -248,72 +249,70 @@ def server(input, output, session):
                 "GNOMAD": f"gnomAD variants with allele count >= {input.allele_min()}",
                 "PTC": "PTC variants to induce LoF for assay validation/calibration",  
             })
-        return 
 
     @render.ui
-    @reactive.event(input.action_button, input.example)
     def total_pegs():
+        peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
             return peg_df.shape[0]
-
-    @render.ui
-    @reactive.event(input.action_button, input.example)
-    def total_vus():
-        if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])].shape[0]
-        
-    @render.ui
-    @reactive.event(input.action_button, input.example)
-    def total_plp():
-        if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])].shape[0]
-        
     
     @render.ui
-    @reactive.event(input.action_button, input.example)
+    def total_vus():
+        peg_df = peg_df_glob.get()
+        if peg_df.shape[0] > 0:
+            return peg_df[peg_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])].shape[0]
+    
+    @render.ui
+    def total_plp():
+        peg_df = peg_df_glob.get()
+        if peg_df.shape[0] > 0:
+            return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])].shape[0]
+    
+    @render.ui
     def total_blb():
+        peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
             return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])].shape[0]
 
     @render_plotly
-    @reactive.event(input.action_button, input.example)
     def peg_dist_chart():
-    # Generate a random signal
-        df_to_plot = peg_df.copy().dropna(subset=["coding_pos"])
-        x = [int(i) for i in list(df_to_plot["coding_pos"])]
+        peg_df = peg_df_glob.get()
+        if peg_df.shape[0] != 0:
+            df_to_plot = peg_df.copy().dropna(subset=["coding_pos"])
+            x = [int(i) for i in list(df_to_plot["coding_pos"])]
 
-        layout = go.Layout(
-            yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
-            xaxis = dict(range=[0, max(x)+10]),
-            plot_bgcolor='white',  # Change background to white
-            title=input.gene() + " PE windows",
-        )
-        # Plot the chart
-        fig = go.Figure(layout=layout)
+            layout = go.Layout(
+                yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
+                xaxis = dict(range=[0, max(x)+10]),
+                plot_bgcolor='white',  # Change background to white
+                title=input.gene() + " PE windows",
+            )
+            # Plot the chart
+            fig = go.Figure(layout=layout)
 
-        fig.add_shape(
-            type="rect",
-            x0=0,
-            y0=-.3,
-            x1=max(x)+10,
-            y1=.3,
-            line_width=3,
-            opacity=0.8,
-        )
-        windows = df_to_plot.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
-        for _, window in windows.iterrows():
             fig.add_shape(
                 type="rect",
-                x0=window['Start'],
-                y0=-0.3,
-                x1=window['Finish'],
-                y1=0.3,
-                fillcolor="darkviolet",
-                opacity=.8,
-                line_width=0,
-                label=dict(text=str(window['editing_window']), font=dict(color="White"))
+                x0=0,
+                y0=-.3,
+                x1=max(x)+10,
+                y1=.3,
+                line_width=3,
+                opacity=0.8,
             )
-        
-        return fig
+            windows = df_to_plot.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
+            for _, window in windows.iterrows():
+                fig.add_shape(
+                    type="rect",
+                    x0=window['Start'],
+                    y0=-0.3,
+                    x1=window['Finish'],
+                    y1=0.3,
+                    fillcolor="darkviolet",
+                    opacity=.8,
+                    line_width=0,
+                    label=dict(text=str(window['editing_window']), font=dict(color="White"))
+                )
+            
+            return fig
 
 app = App(app_ui, server, static_assets=app_dir / "www")
