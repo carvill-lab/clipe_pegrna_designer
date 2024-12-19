@@ -7,6 +7,7 @@ from Bio.Seq import Seq
 from clipe_guide_design_methods import *
 import tempfile
 import shutil
+import gc
 
 # Load data and compute static values
 from shiny import App, reactive, render, ui, req
@@ -190,6 +191,10 @@ def server(input, output, session):
         output = expt.build_files_for_jellyfish(peg_df)
         fish_df_glob.set(output[0])
         fish_fa_txt_glob.set(output[1])
+        
+        #free up memory
+        del expt
+        gc.collect()
         
         # TODO: reduce sig figs in allele percentage
         ui.insert_ui(
