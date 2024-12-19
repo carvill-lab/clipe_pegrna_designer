@@ -10,7 +10,7 @@ import shutil
 import gc
 
 # Load data and compute static values
-from shiny import App, reactive, render, ui, req
+from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
 app_dir = Path(__file__).parent
@@ -27,18 +27,11 @@ example_clinvar_path = str(app_dir / "example_input/clinvar_result.txt")
 example_gnomad_path = str(app_dir / "example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv")
 
 
-# ICONS = {
-#     "windows": fa.icon_svg("window-restore", "regular"),
-#     "variants": fa.icon_svg("dna"),
-#     "vus": fa.icon_svg("circle-question"),
-#     "plp": fa.icon_svg("circle-check"),
-#     "blb": fa.icon_svg("circle-check"),
-#     "gnomad": fa.icon_svg("people-group"),
-#     "ellipsis": fa.icon_svg("ellipsis"),
-# }
-
 # Add page title and sidebar
 app_ui = ui.page_navbar(
+    ui.head_content(
+        ui.HTML("<!-- Google tag (gtag.js) -->\n<script async src='https://www.googletagmanager.com/gtag/js?id=G-MFQGJY5LJY'></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag('js', new Date());\n\n  gtag('config', 'G-MFQGJY5LJY');\n</script>"),
+    ),
     ui.nav_panel("pegRNA Designer", 
         ui.page_sidebar(
         ui.sidebar(
