@@ -126,6 +126,7 @@ def server(input, output, session):
     example_bool = reactive.value(False)
     example_count = reactive.value(0)
     peg_df_glob = reactive.value(pd.DataFrame())
+    screen_df_glob = reactive.value(pd.DataFrame())
     fish_df_glob = reactive.value(pd.DataFrame())
     fish_fa_txt_glob = reactive.value("")
 
@@ -178,10 +179,11 @@ def server(input, output, session):
                 gnomad_file = input.gnomad_csv()[0]["datapath"]
         
         expt = clipe_expt(input.transcript().split(" ")[0], clinvar_file, gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
-        peg_df, windows = expt.run_guide_design()
+        peg_df, screen_df, windows = expt.run_guide_design()
         peg_df_glob.set(peg_df)
+        screen_df_glob.set(screen_df)
 
-        output = expt.build_files_for_jellyfish(peg_df)
+        output = build_files_for_jellyfish(peg_df, screening_df=screen_df)
         fish_df_glob.set(output[0])
         fish_fa_txt_glob.set(output[1])
         
@@ -200,12 +202,12 @@ def server(input, output, session):
             "download_checkbox",  
             ui.span("Download the following files:", style="font-weight: bold;"),  
             {  
-            "peg_tables": "pegRNA design tables (.csv)",  
+            "peg_tables": "pegRNA designs and ordering (.csv, .xlsx)", 
+            "screen_tables": "pegRNA guide screening files (.csv, .xlsx)",
             "RTTs": "RTT data for downstream analyses (.csv, .fa)",
-            "idt": "IDT oPool ordering files (.xlsx)",
             "nicking_idt": "IDT nicking guide ordering files (.txt)"
             },
-            width="100%", selected=["peg_tables", "RTTs", "idt", "nicking_idt"]),
+            width="100%", selected=["peg_tables", "screen_tables", "RTTs", "nicking_idt"]),
             selector="#download_area",
             where="afterEnd",
         )
@@ -213,10 +215,12 @@ def server(input, output, session):
         example_bool.set(False)
 
         return peg_df
+    
 
     @render.download(filename=lambda: f"{date.today()}_{input.gene()}_clipe_designs.zip")
     def download_button():
         peg_df = peg_df_glob.get()
+        screen_df = screen_df_glob.get()
         fish_df = fish_df_glob.get()
         fish_fa_txt = fish_fa_txt_glob.get()
         files_to_download = input.download_checkbox()
@@ -226,29 +230,22 @@ def server(input, output, session):
                 temp_path = Path(temp_dir)
                 if "peg_tables" in files_to_download:
                     peg_df.to_csv(temp_path / f"{file_prefix}full_pegRNA_designs.csv", index=False)
-                if "RTTs" in files_to_download:
-                    with open(temp_path / f"{file_prefix}RTT_fasta.fa", "w") as f:
-                        f.write(fish_fa_txt)
-                    fish_df.to_csv(temp_path / f"{file_prefix}RTT_table.csv", index=False)
-                if "idt" in files_to_download:
                     idt_df = peg_df[['editing_window', "full_peg"]]
                     idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
                     idt_df.columns = ["Pool name", "Sequence"]
-                    idt_df.to_excel(temp_path / f"{file_prefix}IDT_opool_order_data.xlsx", index=False)
+                    idt_df.to_excel(temp_path / f"{file_prefix}full_IDT_opool_order_data.xlsx", index=False)
+                if "screen_tables" in files_to_download:
+                    screen_df.to_csv(temp_path / f"{file_prefix}screening_pegRNA_designs.csv", index=False)
+                    idt_df = screen_df[['editing_window', "full_peg"]]
+                    idt_df['editing_window'] = f"{file_prefix}guide_screening"
+                    idt_df.columns = ["Pool name", "Sequence"]
+                    idt_df.to_excel(temp_path / f"{file_prefix}screening_IDT_opool_order_data.xlsx", index=False)
+                if "RTTs" in files_to_download:
+                    with open(temp_path / f"{file_prefix}RTT_fasta.fa", "w") as f:
+                        f.write(fish_fa_txt)
+                    fish_df.to_csv(temp_path / f"{file_prefix}RTT_table.csv", index=False)                    
                 if "nicking_idt" in files_to_download:
-                    nick_df = peg_df[['nicking sgrna', 'editing_window']].drop_duplicates()
-                    nick_df['name'] = nick_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}_nick")
-                    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "g" + x if x[0] != "G" else  x)
-                    rev_comp_df = nick_df.copy()
-                    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: str(Seq(x).reverse_complement()))
-                    nick_df['name'] = nick_df['name'].apply(lambda x: f"{x}_top")
-                    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "cacc" + x)
-                    rev_comp_df['name'] = rev_comp_df['name'].apply(lambda x: f"{x}_bottom")
-                    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: "aaac" + x)
-                    nick_df = pd.concat([nick_df, rev_comp_df])
-                    nick_df['scale'] = "25nm"
-                    nick_df['purification'] = "STD"
-                    nick_df.sort_values("editing_window", inplace=True)
+                    nick_df = prep_nicking_order_df(file_prefix, peg_df)
                     nick_df[['name', 'nicking sgrna', 'scale', 'purification']].to_csv(temp_path / f"{file_prefix}IDT_nicking_order_data.txt", sep="\t", index=False, header=False)
                     
                 zip_path = shutil.make_archive(temp_path, 'zip', temp_path)
@@ -256,6 +253,7 @@ def server(input, output, session):
                 with open(zip_path, "rb") as f:
                     x = f.read()
                 yield(x)
+                
 
 
     @reactive.effect

@@ -55,21 +55,29 @@ class clipe_expt:
 
         # design pegRNAs for each window
         final_peg_df = pd.DataFrame()
+        guide_screening_df = pd.DataFrame()
         for x, window in enumerate(top_windows):
             window_df = vars_to_include[(vars_to_include["pos"] >= window['rtt_start']) & (vars_to_include["pos"] <= window['rtt_end'])]
             peg_df = self.design_pegrnas(window['rtt_start'], window['rtt_end'], window['peg_strand'], window_df, stop_codons=include_ptcs) 
             peg_df["editing_window"] = x + 1
             final_peg_df = pd.concat([final_peg_df, peg_df])
 
-        # prepare oligo df
-        idt_df = self.clipe_prepare_oligo_df(final_peg_df)
+            temp_screen_df = self.design_pegrnas(window['rtt_start'], window['rtt_end'], window['peg_strand'], window_df, guide_screening_mode=True)
+            temp_screen_df["editing_window"] = x + 1
+            temp_screen_df['var_id'] = f'window_{x+1}_' + temp_screen_df['var_id']
+            guide_screening_df = pd.concat([guide_screening_df, temp_screen_df])
 
-        # merge dfs
-        final_df = pd.merge(final_peg_df, idt_df, on="var_id", how="left")
-        # drop some columns
-        final_df = final_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
+        dfs_to_return = []
+        for pegrna_df in [final_peg_df, guide_screening_df]:
+            # prepare oligo df
+            idt_df = self.clipe_prepare_oligo_df(pegrna_df)
+            # merge dfs
+            final_df = pd.merge(pegrna_df, idt_df, on="var_id", how="left")
+            # drop some columns
+            final_df = final_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
+            dfs_to_return.append(final_df)
 
-        return final_df, top_windows
+        return dfs_to_return[0], dfs_to_return[1], top_windows
     
 
     def set_ref_fasta(self, fasta_dir):
@@ -253,7 +261,7 @@ class clipe_expt:
         return top_windows
 
 
-    def design_pegrnas(self, window_start, window_end, peg_strand, window_df, stop_codons=False):
+    def design_pegrnas(self, window_start, window_end, peg_strand, window_df, stop_codons=False, guide_screening_mode=False):
         # convert back to 0 indexing
         if peg_strand == "+":
             spacer_start = window_start-18 
@@ -273,17 +281,31 @@ class clipe_expt:
             pbs_rev = str(Seq(self.ref_fasta[window_end:window_end+self.pbs_len]).reverse_complement())
         else:
             return 
+        
+        if guide_screening_mode:
+            # duplicate last entry in window_df 
+            no_edit_entry = window_df.iloc[[-1]]
+            no_edit_entry['var_id'] = "syn_edit"
+            no_edit_entry['alt'] = no_edit_entry['ref']
+            window_df = no_edit_entry
+
 
         window_df["ref_seq"], window_df["alt_seq"] = zip(*window_df.apply(self.create_edit_fastas, axis=1))
-
         pegrna_data = {}
-        for x, row in window_df.iterrows():
+        for _, row in window_df.iterrows():
             local_edit_pos = row['pos'] - window_start
             if row['ref'].upper() != rtt_rev_temp[local_edit_pos]:
                 print(f"Warning: Reference genome does not match the reference allele: {row['var_id']}")
                 raise ValueError("WARNING ALERT DEVELOPER: ClinVar reference doesn't match hg38 fasta")
-            rtt_rev = rtt_rev_temp[:local_edit_pos] + row['alt'].lower() + rtt_rev_temp[local_edit_pos+1:]
             
+            if guide_screening_mode:
+                rtt_rev = rtt_rev_temp
+                lower_pam_changes = True
+            else:
+                rtt_rev = rtt_rev_temp[:local_edit_pos] + row['alt'].lower() + rtt_rev_temp[local_edit_pos+1:]
+                lower_pam_changes = False
+
+                
             if peg_strand == "-":
                 rtt_rev = str(Seq(rtt_rev).reverse_complement())
             
@@ -292,8 +314,8 @@ class clipe_expt:
         peg_df = pd.DataFrame(pegrna_data).transpose().reset_index()
         merged_df = pd.merge(window_df, peg_df, left_on='var_id', right_on='index', how='left')
 
-        if self.disrupt_pam:
-            merged_df["rtt"], merged_df["pam_status"], merged_df["seed_status"], merged_df["aa_change"], merged_df["warnings"] = zip(*merged_df.apply(lambda x: self.disrupt_pam_seed(x["ref_seq"], x["alt_seq"], x["spacer"], x["rtt"]), axis=1))
+        if self.disrupt_pam or guide_screening_mode:
+            merged_df["rtt"], merged_df["pam_status"], merged_df["seed_status"], merged_df["aa_change"], merged_df["warnings"] = zip(*merged_df.apply(lambda x: self.disrupt_pam_seed(x["ref_seq"], x["alt_seq"], x["spacer"], x["rtt"], lower_changes=lower_pam_changes), axis=1))
 
         merged_df = merged_df.sort_values("pos")
 
@@ -302,7 +324,10 @@ class clipe_expt:
 
         # add nicking guides
         merged_df['nicking sgrna'], merged_df['distance_to_nick'] = self.pick_nicking_guide(window_start, peg_strand)
- 
+
+        if guide_screening_mode:
+            merged_df = merged_df.drop(columns=["chr","pos","ref","alt","protein_change","coding_pos", "Germline classification", "Allele Count","Allele Number","Allele Frequency"])
+
         return merged_df
 
 
@@ -373,7 +398,7 @@ class clipe_expt:
         return aa_changes    
 
     # take a reverse transcription template, find the PAM and disrupt it
-    def disrupt_pam_seed(self, ref_seq, alt_seq, spacer, rtt):
+    def disrupt_pam_seed(self, ref_seq, alt_seq, spacer, rtt, lower_changes=False):
         warnings = []
         seed_status = "-"
         pam_status = "-"
@@ -501,47 +526,45 @@ class clipe_expt:
                     )
 
         # get ready to modify pam/seed
-        rtt_rc = Seq(rtt)
-        rtt_pam = rtt_rc[3:6]
-        rtt_seed = rtt_rc[0:3]
+        rtt_new = Seq(rtt)
+        rtt_pam = rtt_new[3:6]
+        rtt_seed = rtt_new[0:3]
 
-        def swap_pam(possible_pam_disrupts, rtt_rc):
+        def swap_pam(possible_pam_disrupts, rtt_new):
             # choose edited synonymous codon with the highest frequency
             pam_edit = min(possible_pam_disrupts, key=lambda x: x["freq_diff"])
             if len(pam_edit["new_pam_codon_region"]) == 3:
-                rtt_rc = rtt_rc[:3] + pam_edit["new_pam_codon_region"] + rtt_rc[6:]
+                rtt_new = rtt_new[:3] + pam_edit["new_pam_codon_region"] + rtt_new[6:]
             else: # length 6
                 # find the new pam region
-                start = rtt_rc[1:8].upper().find(pam_edit["old_pam_codon_region"]) + 1
+                start = rtt_new[1:8].upper().find(pam_edit["old_pam_codon_region"]) + 1
                 if start == 0:
                     print("Error: old pam not found in rtt -- Alert Developer")
                     raise ValueError("Error: old pam not found in rtt -- Alert Developer")
                 else:
-                    rtt_rc = rtt_rc[:start] + pam_edit["new_pam_codon_region"] + rtt_rc[start+6:]
+                    rtt_new = rtt_new[:start] + pam_edit["new_pam_codon_region"] + rtt_new[start+6:]
 
-            rtt = rtt_rc.reverse_complement()
-            return rtt, rtt_rc, pam_edit["new_pam"]
+            return rtt_new, pam_edit["new_pam"]
 
-        def swap_seed(possible_seed_disrupts, rtt_rc):
+        def swap_seed(possible_seed_disrupts, rtt_new):
             seed_edit = min(possible_seed_disrupts, key=lambda x: x["freq_diff"])
             if len(seed_edit["new_seed_codon_region"]) == 3:
-                rtt_rc = seed_edit["new_seed_codon_region"] + rtt_rc[3:]
+                rtt_new = seed_edit["new_seed_codon_region"] + rtt_new[3:]
             else: # length 6
                 # find the new pam region
-                start = rtt_rc[0:5].upper().find(seed_edit["old_seed_codon_region"])
+                start = rtt_new[0:5].upper().find(seed_edit["old_seed_codon_region"])
                 if start == -1:
                     print("Error: old seed not found in rtt -- Alert Developer")
                     raise ValueError("Error: old seed not found in rtt -- Alert Developer")
                 else:
-                    rtt_rc = rtt_rc[:start] + seed_edit["new_seed_codon_region"] + rtt_rc[start+len(seed_edit["new_seed_codon_region"]):]
+                    rtt_new = rtt_new[:start] + seed_edit["new_seed_codon_region"] + rtt_new[start+len(seed_edit["new_seed_codon_region"]):]
 
-            rtt = rtt_rc.reverse_complement()
-            return rtt, rtt_rc, seed_edit["new_seed"]
+            return rtt_new, seed_edit["new_seed"]
 
         # try to disrupt the PAM
         if rtt_pam == spacer_pam[-3:]:
             if len(possible_pam_disrupts) > 0:
-                rtt, rtt_rc, new_pam = swap_pam(possible_pam_disrupts, rtt_rc)
+                rtt_new, new_pam = swap_pam(possible_pam_disrupts, rtt_new)
                 pam_status = rtt_pam + " -> " + new_pam
             else:
                 # no synonymous changes disrupt the PAM
@@ -554,21 +577,27 @@ class clipe_expt:
         if rtt_seed == spacer_pam[-6:-3]:
             if pam_status in ["-", "edit created new PAM"]:
                 if len(possible_seed_disrupts) > 0:
-                    rtt, rtt_rc, new_seed = swap_seed(possible_seed_disrupts, rtt_rc)
+                    rtt_new, new_seed = swap_seed(possible_seed_disrupts, rtt_new)
                     seed_status = rtt_seed + " -> " + new_seed
                 else:
                     seed_status = "-"
                     warnings.append("No synonymous changes disrupt the seed or PAM")
 
         # before returning the new rtt, confirm that only one AA was changed
-        new_alt_seq = ref_seq[:spacer_end - 3] + rtt_rc + ref_seq[spacer_end-3 + len(rtt_rc):]
+        new_alt_seq = ref_seq[:spacer_end - 3] + rtt_new + ref_seq[spacer_end-3 + len(rtt_new):]
         aa_changes = self.find_aa_changes(ref_seq, new_alt_seq, codon_flip)
         if len(aa_changes) >1:
             warnings.append("More than one AA change in the edited sequence")
         if len(aa_changes) == 0:
             warnings.append("No AA change in the edited sequence")
         
-        return str(rtt_rc), pam_status, seed_status, str(aa_changes), warnings
+        if lower_changes:
+            rtt_lower = ""
+            for x, rtt_new_base in enumerate(rtt_new):
+                rtt_lower += rtt_new_base.lower() if rtt_new_base != rtt[x] else rtt_new_base
+            rtt_new = rtt_lower
+        
+        return str(rtt_new), pam_status, seed_status, str(aa_changes), warnings
 
     def find_first_codon(self, peg_df, start, end, codon_flip):
         if not codon_flip:
@@ -708,34 +737,42 @@ class clipe_expt:
 
             return idt_df
 
-    def build_archetypal_df(self, idt_peg_df):
-        archetypal_df = []
-        # find all unique spacer sequences
-        unique_spacers = idt_peg_df["spacer"].unique()
+def build_files_for_jellyfish(final_df, screening_df=None):
+    # take the rtt and var_ids from the final_df and prep for fasta output
+    rtt_df = final_df[["var_id", "rtt"]]
+    if screening_df is not None:
+        rtt_df = pd.concat([rtt_df, screening_df[["var_id", "rtt"]]])
+    rtt_df = rtt_df.sort_values("var_id")
+    # check for duplicate var or rtts
+    if rtt_df["var_id"].duplicated().any():
+        print("Duplicate var_ids in the final_df")
+        raise ValueError("Duplicate var_ids in the final_df")
+    if rtt_df["rtt"].duplicated().any():
+        print("Duplicate rtts in the final_df")
+        raise ValueError("Duplicate rtts in the final_df")
+    
+    # write to txt variable that can later be written to a file
+    fasta_str = ""
+    for _, row in rtt_df.iterrows():
+        fasta_str += f">{row['var_id']}\n{row['rtt']}\n"
 
-        # pick the row with the first stop codon in RTT
-        return
-
-    def build_files_for_jellyfish(self, final_df, archetype_df=None):
-        # take the rtt and var_ids from the final_df and prep for fasta output
-        rtt_df = final_df[["var_id", "rtt"]]
-        if archetype_df is not None:
-            rtt_df = rtt_df.concat(archetype_df[["var_id", "rtt"]])
-        rtt_df = rtt_df.sort_values("var_id")
-        # check for duplicate var or rtts
-        if rtt_df["var_id"].duplicated().any():
-            print("Duplicate var_ids in the final_df")
-            raise ValueError("Duplicate var_ids in the final_df")
-        if rtt_df["rtt"].duplicated().any():
-            print("Duplicate rtts in the final_df")
-            raise ValueError("Duplicate rtts in the final_df")
-        
-        # write to txt variable that can later be written to a file
-        fasta_str = ""
-        for _, row in rtt_df.iterrows():
-            fasta_str += f">{row['var_id']}\n{row['rtt']}\n"
-
-        return rtt_df, fasta_str
+    return rtt_df, fasta_str
+    
+def prep_nicking_order_df(file_prefix, peg_df):
+    nick_df = peg_df[['nicking sgrna', 'editing_window']].drop_duplicates()
+    nick_df['name'] = nick_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}_nick")
+    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "g" + x if x[0] != "G" else  x)
+    rev_comp_df = nick_df.copy()
+    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: str(Seq(x).reverse_complement()))
+    nick_df['name'] = nick_df['name'].apply(lambda x: f"{x}_top")
+    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "cacc" + x)
+    rev_comp_df['name'] = rev_comp_df['name'].apply(lambda x: f"{x}_bottom")
+    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: "aaac" + x)
+    nick_df = pd.concat([nick_df, rev_comp_df])
+    nick_df['scale'] = "25nm"
+    nick_df['purification'] = "STD"
+    nick_df.sort_values("editing_window", inplace=True)
+    return nick_df
 
 
 CODON_DICT = {
