@@ -633,7 +633,7 @@ class clipe_expt:
             rtt_rev_temp = str(Seq(rtt_rev_temp).reverse_complement())
 
         #pam disruption rtt
-        pam_disrupt_rtt = last_rtt_variant['rtt'][:6]
+        pam_disrupt_rtt = last_rtt_variant['rtt'][:8]
             
         index = first_codon_idx
         ptc_num = 1
@@ -644,8 +644,8 @@ class clipe_expt:
             else:
                 rtt_rev = rtt_rev_temp[:index] + "tga" + rtt_rev_temp[index+3:]
 
-            if index > 5:
-                rtt_rev = pam_disrupt_rtt + rtt_rev[6:]
+            if index > 7:
+                rtt_rev = pam_disrupt_rtt + rtt_rev[8:]
                 if 'pam_status' in last_rtt_variant:
                     pam_status = last_rtt_variant['pam_status']
                     seed_status = last_rtt_variant['seed_status']
@@ -658,6 +658,8 @@ class clipe_expt:
             # check for aa changes:
             aa_changes = self.find_aa_changes(rtt_rev_temp[first_codon_idx:], rtt_rev[first_codon_idx:], codon_flip)
             warnings = ["error with ptc introduction"] if (len(aa_changes) != 1 or '->End' not in aa_changes[0]) else []
+            if len(aa_changes) == 0:
+                warnings.append("possible endogenous stop codon site")
 
             ptc_data = {'var_id': "PTC_" + str(ptc_num)+"_"+str(pos), 'chr': last_rtt_variant['chr'], 'pos': pos, 'strand':strand, 'spacer': last_rtt_variant['spacer'], 'pam':last_rtt_variant['pam'], 'rtt':rtt_rev, 'pbs':last_rtt_variant['pbs']}
             if 'pam_status' in last_rtt_variant:
