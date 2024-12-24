@@ -326,7 +326,9 @@ class clipe_expt:
         merged_df['nicking sgrna'], merged_df['distance_to_nick'] = self.pick_nicking_guide(window_start, peg_strand)
 
         if guide_screening_mode:
-            merged_df = merged_df.drop(columns=["chr","pos","ref","alt","protein_change","coding_pos", "Germline classification", "Allele Count","Allele Number","Allele Frequency"])
+            merged_df = merged_df.drop(columns=["chr","pos","ref","alt","protein_change","coding_pos", "Germline classification"])
+            if "Allele Count" in merged_df:
+                merged_df = merged_df.drop(columns=["Allele Count", "Allele Number", "Allele Frequency"])
 
         return merged_df
 

@@ -113,7 +113,7 @@ app_ui = ui.page_navbar(
         ),
     ),
     ui.nav_spacer(),
-    ui.nav_control(ui.a('CliPE Home', href='http://calhoujd.github.io', target="_blank",)),
+    ui.nav_control(ui.a('CliPE Home', href='https://home.clipe-mave.org', target="_blank",)),
     ui.nav_control(ui.a('Carvill Lab', href='https://sites.northwestern.edu/carvilllab/', target="_blank",)),
     ui.nav_control(ui.a(ui.img(src="https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png", alt="Github", height="25px"), href='https://github.com/nbodkin/clipe_pegrna_builder', target="_blank")),
 
