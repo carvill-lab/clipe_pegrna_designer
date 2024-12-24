@@ -68,12 +68,10 @@ class clipe_expt:
 
         dfs_to_return = []
         for pegrna_df in [final_peg_df, guide_screening_df]:
-            # prepare oligo df
             idt_df = self.clipe_prepare_oligo_df(pegrna_df)
-            # merge dfs
             final_df = pd.merge(pegrna_df, idt_df, on="var_id", how="left")
-            # drop some columns
             final_df = final_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
+            final_df = final_df[["editing_window"] + [col for col in final_df.columns if col != "editing_window"]]         
             dfs_to_return.append(final_df)
 
         return dfs_to_return[0], dfs_to_return[1], top_windows
@@ -223,11 +221,12 @@ class clipe_expt:
             if potential_pam[:-1] == "CC":
                 pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
         return pd.DataFrame(pam_sites)
-            
+    
 
     def find_variant_dense_windows(self, desired_var_df):
+        #TODO: in future, can search only around exons of desired gene to speed up window finding
         windows = []
-        pam_sites = self.find_pam_sites(self.vars_start-20, self.vars_end+20) # add some padding to allow for spacers outside of the variant region
+        pam_sites = self.find_pam_sites(self.vars_start-20-self.rtt_len, self.vars_end+20+self.rtt_len) # add some padding to allow for spacers outside of the variant region
         for _, row in pam_sites.iterrows():
             if row['strand'] == "+":
                 rtt_start = row['pam_start_loc'] - 3
