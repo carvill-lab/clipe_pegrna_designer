@@ -601,8 +601,8 @@ class clipe_expt:
         
         return str(rtt_new), pam_status, seed_status, str(aa_changes), warnings
 
-    def find_first_codon(self, peg_df, start, end, codon_flip):
-        if not codon_flip:
+    def find_first_codon(self, peg_df, start, end, codon_flip, strand):
+        if strand == "+":
             first_rtt_variant = peg_df.iloc[0]
             first_var_location = first_rtt_variant['pos'] - start
             last_rtt_variant = peg_df.iloc[-1]
@@ -610,12 +610,14 @@ class clipe_expt:
             first_rtt_variant = peg_df.iloc[-1]
             first_var_location = end - first_rtt_variant['pos']
             last_rtt_variant = peg_df.iloc[0]
-        
-        if not codon_flip:
-            first_codon_idx = first_var_location - first_rtt_variant["read_frame_pos"] + 1
-        else:
-            first_codon_idx = first_var_location + first_rtt_variant["read_frame_pos"] -3
 
+        read_frame_pos = first_rtt_variant["read_frame_pos"]
+        
+        if codon_flip:
+            read_frame_pos = {1:3, 2:2, 3:1}[read_frame_pos]
+        
+        first_codon_idx = first_var_location - read_frame_pos + 1
+        
         while first_codon_idx < 0 or first_codon_idx > 2:
             if first_codon_idx < 0:
                 first_codon_idx +=3
@@ -627,7 +629,7 @@ class clipe_expt:
     def introduce_ptcs(self, merged_df,rtt_rev_temp, window_start, window_end, strand):
         # find first codon in rtt
         codon_flip = ((strand == "-" and self.coding_strand == "+") or (strand == "+" and self.coding_strand == "-"))
-        first_codon_idx, last_rtt_variant = self.find_first_codon(merged_df, window_start, window_end, codon_flip)
+        first_codon_idx, last_rtt_variant = self.find_first_codon(merged_df, window_start, window_end, codon_flip, strand)
 
         if strand == "-":
             rtt_rev_temp = str(Seq(rtt_rev_temp).reverse_complement())
@@ -807,3 +809,27 @@ def make_synonymous_changes(codons):
             if CODON_DICT[key][0] == CODON_DICT[codon][0] and key != codon:
                 codon_changes[codon].append({'syn_codon': key, 'aa': CODON_DICT[key][0], 'freq': CODON_DICT[key][2]})
     return codon_changes
+
+# for testing above methods
+def main():
+    PBS_LEN = 10
+    RTT_LEN = 40
+    NUM_WINDOWS = 10
+    DISRUPT_PAMS = True
+    DESIGN_STRAT = "vus"
+    INCLUSION_TYPES = ['BLB', 'PLP', 'PTC']
+    ALLELE_COUNT_MIN = 10
+
+    TRANSCRIPT_NAME = "NM_000548.5"#'NM_001270.4'
+    CLINVAR_PATH = "./src/example_input/clinvar_result.txt" #'/Users/nico/Downloads/clinvar_result-3.txt'
+    GNOMAD_PATH = None #'./input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv'
+    expt = clipe_expt(TRANSCRIPT_NAME, CLINVAR_PATH, GNOMAD_PATH, PBS_LEN, RTT_LEN, NUM_WINDOWS, DISRUPT_PAMS, DESIGN_STRAT, INCLUSION_TYPES, ALLELE_COUNT_MIN)
+    final_df, screen_df, windows = expt.run_guide_design()
+    final_df.to_csv("final_df.csv")
+    print(final_df[final_df['var_id'].str.contains("PTC")]['aa_change'])
+
+    df, fa_txt = build_files_for_jellyfish(final_df)
+    # with open("test.fa", "w") as f:
+    #     f.write(fa_txt)
+
+main()
