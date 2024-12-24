@@ -241,9 +241,8 @@ class clipe_expt:
                 continue
 
             # get all variants in the window
-            window = desired_var_df[(desired_var_df["pos"] >= rtt_start) & (desired_var_df["pos"] <= rtt_end)]
+            count = desired_var_df["pos"].between(rtt_start, rtt_end).sum()
             # count the number of variants in the df
-            count = len(window)
             windows.append({'rtt_start':rtt_start, 'rtt_end':rtt_end, "num_vars":count, "peg_strand":row['strand']}) # store in 1 indexing
 
         # sort the windows by priority
