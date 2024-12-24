@@ -35,7 +35,6 @@ class clipe_expt:
             print("Design strategy not recognized")
             raise ValueError("Design strategy not recognized")
         
-
     def run_guide_design(self):
         # find the densest windows
         top_windows = self.find_variant_dense_windows(self.desired_vars)
@@ -808,27 +807,3 @@ def make_synonymous_changes(codons):
             if CODON_DICT[key][0] == CODON_DICT[codon][0] and key != codon:
                 codon_changes[codon].append({'syn_codon': key, 'aa': CODON_DICT[key][0], 'freq': CODON_DICT[key][2]})
     return codon_changes
-
-# for testing above methods
-def main():
-    PBS_LEN = 10
-    RTT_LEN = 40
-    NUM_WINDOWS = 10
-    DISRUPT_PAMS = True
-    DESIGN_STRAT = "vus"
-    INCLUSION_TYPES = ['BLB', 'PLP', 'PTC']
-    ALLELE_COUNT_MIN = 10
-
-    TRANSCRIPT_NAME = "NM_000548.5"#'NM_001270.4'
-    CLINVAR_PATH = "./src/example_input/clinvar_result.txt" #'/Users/nico/Downloads/clinvar_result-3.txt'
-    GNOMAD_PATH = None #'./input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv'
-    expt = clipe_expt(TRANSCRIPT_NAME, CLINVAR_PATH, GNOMAD_PATH, PBS_LEN, RTT_LEN, NUM_WINDOWS, DISRUPT_PAMS, DESIGN_STRAT, INCLUSION_TYPES, ALLELE_COUNT_MIN)
-    final_df, screen_df, windows = expt.run_guide_design()
-    final_df.to_csv("final_df.csv")
-    print(final_df[final_df['var_id'].str.contains("PTC")]['aa_change'])
-
-    df, fa_txt = build_files_for_jellyfish(final_df)
-    # with open("test.fa", "w") as f:
-    #     f.write(fa_txt)
-
-main()
