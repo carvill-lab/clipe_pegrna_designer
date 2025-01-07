@@ -203,7 +203,7 @@ def server(input, output, session):
             ui.span("Download the following files:", style="font-weight: bold;"),  
             {  
             "peg_tables": "pegRNA designs and ordering (.csv, .xlsx)", 
-            "screen_tables": "pegRNA guide screening files (.csv, .xlsx)",
+            "screen_tables": "pegRNA guide screening files (.csv, .txt)",
             "RTTs": "RTT data for downstream analyses (.csv, .fa)",
             "nicking_idt": "IDT nicking guide ordering files (.txt)"
             },
@@ -236,17 +236,15 @@ def server(input, output, session):
                     idt_df.to_excel(temp_path / f"{file_prefix}full_IDT_opool_order_data.xlsx", index=False)
                 if "screen_tables" in files_to_download:
                     screen_df.to_csv(temp_path / f"{file_prefix}screening_pegRNA_designs.csv", index=False)
-                    idt_df = screen_df[['editing_window', "full_peg"]]
-                    idt_df['editing_window'] = f"{file_prefix}guide_screening"
-                    idt_df.columns = ["Pool name", "Sequence"]
-                    idt_df.to_excel(temp_path / f"{file_prefix}screening_IDT_opool_order_data.xlsx", index=False)
+                    idt_df = prep_screening_order_df(file_prefix, screen_df)
+                    idt_df[['name', 'oligo', 'scale', 'purification']].to_csv(temp_path / f"{file_prefix}screening_IDT_oligo_order_data.txt", sep="\t", index=False, header=False)
                 if "RTTs" in files_to_download:
                     with open(temp_path / f"{file_prefix}RTT_fasta.fa", "w") as f:
                         f.write(fish_fa_txt)
                     fish_df.to_csv(temp_path / f"{file_prefix}RTT_table.csv", index=False)                    
                 if "nicking_idt" in files_to_download:
                     nick_df = prep_nicking_order_df(file_prefix, peg_df)
-                    nick_df[['name', 'nicking sgrna', 'scale', 'purification']].to_csv(temp_path / f"{file_prefix}IDT_nicking_order_data.txt", sep="\t", index=False, header=False)
+                    nick_df[['name', 'oligo', 'scale', 'purification']].to_csv(temp_path / f"{file_prefix}IDT_nicking_oligo_order_data.txt", sep="\t", index=False, header=False)
                     
                 zip_path = shutil.make_archive(temp_path, 'zip', temp_path)
                 # yield zip file data

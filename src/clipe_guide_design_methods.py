@@ -66,13 +66,14 @@ class clipe_expt:
             temp_screen_df['var_id'] = f'window_{x+1}_' + temp_screen_df['var_id']
             guide_screening_df = pd.concat([guide_screening_df, temp_screen_df])
 
+        idt_df = self.clipe_prepare_oligo_df(final_peg_df)
+        final_peg_df = pd.merge(final_peg_df, idt_df, on="var_id", how="left")
+        
         dfs_to_return = []
         for pegrna_df in [final_peg_df, guide_screening_df]:
-            idt_df = self.clipe_prepare_oligo_df(pegrna_df)
-            final_df = pd.merge(pegrna_df, idt_df, on="var_id", how="left")
-            final_df = final_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
-            final_df = final_df[["editing_window"] + [col for col in final_df.columns if col != "editing_window"]]         
-            dfs_to_return.append(final_df)
+            pegrna_df = pegrna_df.drop(columns=["ref_seq", "alt_seq", "read_frame_pos", "index", ])
+            pegrna_df = pegrna_df[["editing_window"] + [col for col in pegrna_df.columns if col != "editing_window"]]         
+            dfs_to_return.append(pegrna_df)
 
         return dfs_to_return[0], dfs_to_return[1], top_windows
     
@@ -701,44 +702,44 @@ class clipe_expt:
         return sgrna, closest_site["pam_start_loc"] - pe_nick_site
 
     def clipe_prepare_oligo_df(self, final_peg_df):
-            # export for IDT -- PCR strategy
-            idt_df = pd.DataFrame()
-            idt_df["var_id"] = final_peg_df["var_id"]
-            idt_df["5' flanking left"] = "ggctac"
-            idt_df["5' Bsa1 recognition site"] = "ggtctcc"
-            pre_spacer_seq = final_peg_df["spacer"].apply(lambda x: "cacc" if x[0].lower()=="g" else "caccg")
-            idt_df["idt_spacer"] = pre_spacer_seq + final_peg_df["spacer"] + "gtttt"
-            idt_df["scaffold"] = "AGAGCTAGAAATAGCAAGTTAAAATAAGGCTAGTCCGTTATCAACTTGAAAAAGTGGCACCGAGTCG".lower()
-            idt_df["idt_rtt"] = final_peg_df["rtt"].apply(lambda x: "gtgc" + str(Seq(x).reverse_complement()))
-            idt_df['idt_pbs'] = final_peg_df['pbs']
-            idt_df["3' Bsa1 recognition site"] = "cgcgtgagacc"
-            idt_df["3' flanking right"] = "gtagcc"
+        # export for IDT -- PCR strategy
+        idt_df = pd.DataFrame()
+        idt_df["var_id"] = final_peg_df["var_id"]
+        idt_df["5' flanking left"] = "ggctac"
+        idt_df["5' Bsa1 recognition site"] = "ggtctcc"
+        pre_spacer_seq = final_peg_df["spacer"].apply(lambda x: "cacc" if x[0].lower()=="g" else "caccg")
+        idt_df["idt_spacer"] = pre_spacer_seq + final_peg_df["spacer"] + "gtttt"
+        idt_df["scaffold"] = "AGAGCTAGAAATAGCAAGTTAAAATAAGGCTAGTCCGTTATCAACTTGAAAAAGTGGCACCGAGTCG".lower()
+        idt_df["idt_rtt"] = final_peg_df["rtt"].apply(lambda x: "gtgc" + str(Seq(x).reverse_complement()))
+        idt_df['idt_pbs'] = final_peg_df['pbs']
+        idt_df["3' Bsa1 recognition site"] = "cgcgtgagacc"
+        idt_df["3' flanking right"] = "gtagcc"
 
-            idt_df["full_peg"] = (
-                idt_df["5' flanking left"]
-                + idt_df["5' Bsa1 recognition site"]
-                + idt_df["idt_spacer"]
-                + idt_df["scaffold"]
-                + idt_df["idt_rtt"]
-                + idt_df["idt_pbs"]
-                + idt_df["3' Bsa1 recognition site"]
-                + idt_df["3' flanking right"]
-            )
-            idt_df['PCR_F'] = idt_df["full_peg"].apply(lambda x: x[:20])
-            idt_df['PCR_R'] = idt_df["full_peg"].apply(lambda x: str(Seq(x[-20:]).reverse_complement()))
+        idt_df["full_peg"] = (
+            idt_df["5' flanking left"]
+            + idt_df["5' Bsa1 recognition site"]
+            + idt_df["idt_spacer"]
+            + idt_df["scaffold"]
+            + idt_df["idt_rtt"]
+            + idt_df["idt_pbs"]
+            + idt_df["3' Bsa1 recognition site"]
+            + idt_df["3' flanking right"]
+        )
+        idt_df['PCR_F'] = idt_df["full_peg"].apply(lambda x: x[:20])
+        idt_df['PCR_R'] = idt_df["full_peg"].apply(lambda x: str(Seq(x[-20:]).reverse_complement()))
 
-            warnings = []
-            # Confirm no internal BsaI sites
-            for seq in idt_df["full_peg"]:
-                seq = seq.upper()
-                num_sites = seq.count("GGTCTC") + seq.count("GAGACC")
-                if num_sites != 2:
-                    warnings.append(f"{num_sites} BsaI sites: likely internal BsaI site")
-                else:
-                    warnings.append("")
-            idt_df["oligo_warnings"] = warnings
+        warnings = []
+        # Confirm no internal BsaI sites
+        for seq in idt_df["full_peg"]:
+            seq = seq.upper()
+            num_sites = seq.count("GGTCTC") + seq.count("GAGACC")
+            if num_sites != 2:
+                warnings.append(f"{num_sites} BsaI sites: likely internal BsaI site")
+            else:
+                warnings.append("")
+        idt_df["oligo_warnings"] = warnings
 
-            return idt_df
+        return idt_df
 
 def build_files_for_jellyfish(final_df, screening_df=None):
     # take the rtt and var_ids from the final_df and prep for fasta output
@@ -761,21 +762,45 @@ def build_files_for_jellyfish(final_df, screening_df=None):
 
     return rtt_df, fasta_str
     
+def prep_anneal_df(file_prefix, oligo_df, mode="nick", overhangs=['cacc', 'aaac']):
+    oligo_df['name'] = oligo_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}_{mode}")
+    if mode in ["nick", "screen_spacer"]:
+        oligo_df['oligo'] = oligo_df['oligo'].apply(lambda x: "g" + x if x[0].upper() != "G" else  x)
+    
+    rev_comp_df = oligo_df.copy()
+    rev_comp_df['oligo'] = rev_comp_df['oligo'].apply(lambda x: str(Seq(x).reverse_complement()))
+    oligo_df['name'] = oligo_df['name'].apply(lambda x: f"{x}_top")
+    oligo_df['oligo'] = oligo_df['oligo'].apply(lambda x: overhangs[0] + x)
+    rev_comp_df['name'] = rev_comp_df['name'].apply(lambda x: f"{x}_bottom")
+    rev_comp_df['oligo'] = rev_comp_df['oligo'].apply(lambda x: overhangs[1] + x)
+
+    full_oligo_df = pd.concat([oligo_df, rev_comp_df])
+    full_oligo_df['scale'] = "25nm"
+    full_oligo_df['purification'] = "STD"
+    full_oligo_df.sort_values("editing_window", inplace=True)
+
+    return full_oligo_df
+
 def prep_nicking_order_df(file_prefix, peg_df):
     nick_df = peg_df[['nicking sgrna', 'editing_window']].drop_duplicates()
-    nick_df['name'] = nick_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}_nick")
-    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "g" + x if x[0] != "G" else  x)
-    rev_comp_df = nick_df.copy()
-    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: str(Seq(x).reverse_complement()))
-    nick_df['name'] = nick_df['name'].apply(lambda x: f"{x}_top")
-    nick_df['nicking sgrna'] = nick_df['nicking sgrna'].apply(lambda x: "cacc" + x)
-    rev_comp_df['name'] = rev_comp_df['name'].apply(lambda x: f"{x}_bottom")
-    rev_comp_df['nicking sgrna'] = rev_comp_df['nicking sgrna'].apply(lambda x: "aaac" + x)
-    nick_df = pd.concat([nick_df, rev_comp_df])
-    nick_df['scale'] = "25nm"
-    nick_df['purification'] = "STD"
-    nick_df.sort_values("editing_window", inplace=True)
+    nick_df.columns = ['oligo', 'editing_window']
+    nick_df = prep_anneal_df(file_prefix, nick_df, mode="nick", overhangs=['cacc', 'aaac'])
     return nick_df
+
+def prep_screening_order_df(file_prefix, screening_df):
+    overhangs = {'spacer': ['cacc', 'ctct'], 'extension': ['gtgc', 'cgcg']}
+    screening_df = screening_df[['spacer', 'rtt', 'pbs', 'editing_window']]
+    screening_df['extension'] = screening_df.apply(lambda x: str(Seq(x.rtt).reverse_complement()).upper() + x.pbs, axis=1)
+    screen_oligo_df = pd.DataFrame()
+    for col in ['spacer', 'extension']:
+        sub_df = screening_df[[col, 'editing_window']]
+        sub_df.columns = ['oligo', 'editing_window']
+        if col == 'spacer':
+            sub_df['oligo'] = sub_df['oligo'].apply(lambda x: x + "gtttt")
+        temp_screening_df = prep_anneal_df(file_prefix, sub_df, mode=f"screen_{col}", overhangs=overhangs[col])
+        screen_oligo_df = pd.concat([screen_oligo_df, temp_screening_df])
+
+    return screen_oligo_df
 
 
 CODON_DICT = {
