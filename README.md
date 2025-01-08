@@ -26,4 +26,4 @@ This project is licensed under the Creative Commons Attribution 4.0 Internationa
 
 ## Contact
 
-For any questions or issues, please open an issue on the [GitHub repository](https://github.com/nbodkin/clipe_pegrna_builder/issues).
+For any questions or issues, please open an issue on the [GitHub repository](https://github.com/nbodkin/clipe_pegrna_designer/issues).
