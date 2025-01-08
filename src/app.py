@@ -115,7 +115,7 @@ app_ui = ui.page_navbar(
     ui.nav_spacer(),
     ui.nav_control(ui.a('CliPE Home', href='https://home.clipe-mave.org', target="_blank",)),
     ui.nav_control(ui.a('Carvill Lab', href='https://sites.northwestern.edu/carvilllab/', target="_blank",)),
-    ui.nav_control(ui.a(ui.img(src="https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png", alt="Github", height="25px"), href='https://github.com/nbodkin/clipe_pegrna_builder', target="_blank")),
+    ui.nav_control(ui.a(ui.img(src="https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png", alt="Github", height="25px"), href='https://github.com/nbodkin/clipe_pegrna_designer', target="_blank")),
 
     title=ui.img(src="clipe_logo.png", alt="clipe logo", height="50px"),
     window_title="CliPE pegRNA Designer",
@@ -178,18 +178,22 @@ def server(input, output, session):
             else:
                 gnomad_file = input.gnomad_csv()[0]["datapath"]
         
-        expt = clipe_expt(input.transcript().split(" ")[0], clinvar_file, gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min())
-        peg_df, arch_df, windows = expt.run_guide_design()
-        peg_df_glob.set(peg_df)
-        arch_df_glob.set(arch_df)
+        with ui.Progress(min=0, max=6) as p:
+            p.set(0, message="Running")
+            expt = clipe_expt(input.transcript().split(" ")[0], clinvar_file, gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min(), prog_bar=p)
+            peg_df, arch_df, windows = expt.run_guide_design()
+            p.set(5, detail="Finishing up")
+            peg_df_glob.set(peg_df)
+            arch_df_glob.set(arch_df)
 
-        output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
-        fish_df_glob.set(output[0])
-        fish_fa_txt_glob.set(output[1])
-        
-        #free up memory
-        del expt
-        gc.collect()
+            output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
+            fish_df_glob.set(output[0])
+            fish_fa_txt_glob.set(output[1])
+            
+            #free up memory
+            del expt
+            gc.collect()
+            p.set(6)
         
         # TODO: reduce sig figs in allele percentage
         ui.insert_ui(

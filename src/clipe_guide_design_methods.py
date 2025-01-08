@@ -6,7 +6,7 @@ from pathlib import Path
 pd.options.mode.copy_on_write = True
 
 class clipe_expt:
-    def __init__ (self, transcript_name, clinvar_path, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, design_strategy, inclusion_types, allele_count_min=5):
+    def __init__ (self, transcript_name, clinvar_path, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
         # input values
         self.pbs_len = int(pbs_len)
         self.rtt_len = int(rtt_len)
@@ -14,12 +14,17 @@ class clipe_expt:
         self.disrupt_pam = bool(disrupt_pam)
         self.inclusion_types = list(inclusion_types)
         self.allele_count_min = allele_count_min
+        self.prog_bar = prog_bar
 
         # process input files
+        if self.prog_bar:
+            self.prog_bar.set(1, detail="Processing inputs")
         self.var_df, self.coding_strand = self.process_input_files(clinvar_path, gnomad_path, transcript_name)
         self.set_variant_locations()
 
         # pull in correct fasta
+        if self.prog_bar:
+            self.prog_bar.set(2, detail="Loading hg38")
         fasta_dir = str(Path(__file__).parent) +  "/genome_files/"
         self.set_ref_fasta(fasta_dir)
 
@@ -37,6 +42,8 @@ class clipe_expt:
         
     def run_guide_design(self):
         # find the densest windows
+        if self.prog_bar:
+            self.prog_bar.set(3, detail="Finding variant dense regions")
         top_windows = self.find_variant_dense_windows(self.desired_vars)
         include_ptcs = False
         # based on inclusion types, add additional vars to windows
@@ -52,6 +59,8 @@ class clipe_expt:
         # remove duplicates
         vars_to_include = vars_to_include.drop_duplicates(subset="var_id")
 
+        if self.prog_bar:
+            self.prog_bar.set(4, detail="Designing pegRNAs")
         # design pegRNAs for each window
         final_peg_df = pd.DataFrame()
         guide_screening_df = pd.DataFrame()
