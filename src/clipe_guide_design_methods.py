@@ -93,7 +93,7 @@ class clipe_expt:
             raise ValueError("Multiple chromosomes detected in the input file.")
         chrom = f'chr{unique_chromosomes[0]}'
         if self.prog_bar:
-            self.prog_bar.set(2, detail="Loading hg38 chr {chrom}")
+            self.prog_bar.set(2, detail=f"Loading hg38 chr{chrom}")
         # Filter the REF_FASTA dictionary to include only the relevant chromosomes
         path = fasta_dir + f"{chrom}.fa.gz"
         self.ref_fasta = str(SeqIO.read(gzip.open(path, "rt"), "fasta").seq).upper()
