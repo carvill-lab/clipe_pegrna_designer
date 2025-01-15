@@ -154,32 +154,31 @@ def server(input, output, session):
 
     @render.data_frame
     @reactive.event(input.action_button, example_count, ignore_init=True)
-    def build_peg_df():
-        with ui.Progress(min=-1, max=6) as p:
-            p.set(-1, message="Queued")
-            # remove download button if it exists
-            ui.remove_ui("#download_button")
-            ui.remove_ui("#download_checkbox")
-            peg_df_glob.set(pd.DataFrame())
-            if input.disrupt_pam() == "yes":
-                disrupt_pam = True
-            else:
-                disrupt_pam = False
-            
-            # validate input files exist
-            if example_bool.get():
-                clinvar_file = example_clinvar_path
-                gnomad_file = example_gnomad_path
-            else:
-                if not input.clinvar_csv():
-                    raise ValueError("Clinvar file must be provided")
-                else:
-                    clinvar_file = input.clinvar_csv()[0]["datapath"]
-                if not input.gnomad_csv():
-                    gnomad_file = None
-                else:
-                    gnomad_file = input.gnomad_csv()[0]["datapath"]
+    def build_peg_df():        
+        # remove download button if it exists
+        ui.remove_ui("#download_button")
+        ui.remove_ui("#download_checkbox")
+        peg_df_glob.set(pd.DataFrame())
+        if input.disrupt_pam() == "yes":
+            disrupt_pam = True
+        else:
+            disrupt_pam = False
         
+        # validate input files exist
+        if example_bool.get():
+            clinvar_file = example_clinvar_path
+            gnomad_file = example_gnomad_path
+        else:
+            if not input.clinvar_csv():
+                raise ValueError("Clinvar file must be provided")
+            else:
+                clinvar_file = input.clinvar_csv()[0]["datapath"]
+            if not input.gnomad_csv():
+                gnomad_file = None
+            else:
+                gnomad_file = input.gnomad_csv()[0]["datapath"]
+                
+        with ui.Progress(min=0, max=6) as p:
             p.set(0, message="Running")
             expt = clipe_expt(input.transcript().split(" ")[0], clinvar_file, gnomad_file, input.length_pbs(), input.length_rtt(), input.num_designs(), disrupt_pam, input.design_strategy(), input.checkbox_group(), input.allele_min(), prog_bar=p)
             peg_df, arch_df, windows = expt.run_guide_design()
