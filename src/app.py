@@ -158,9 +158,11 @@ def server(input, output, session):
 
     @reactive.effect
     @reactive.event(input.action_button, example_count, ignore_init=True)
-    def build_peg_df():                    
-        async_run_guide_design(example_bool.get(), input.transcript(), input.length_pbs(), input.length_rtt(), input.num_designs(), input.design_strategy(), input.checkbox_group(), input.allele_min(), input.clinvar_csv(), input.gnomad_csv(), input.disrupt_pam())
-        example_bool.set(False)
+    def build_peg_df():
+        example_bool_loc = example_bool.get()
+        example_bool.set(False)       
+        async_run_guide_design(example_bool_loc, input.transcript(), input.length_pbs(), input.length_rtt(), input.num_designs(), input.design_strategy(), input.checkbox_group(), input.allele_min(), input.clinvar_csv(), input.gnomad_csv(), input.disrupt_pam())
+        
     
     @ui.bind_task_button(button_id="action_button")
     @reactive.extended_task
