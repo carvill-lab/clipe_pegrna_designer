@@ -132,7 +132,7 @@ class clipe_expt:
             return df
         
         def process_reading_frame(df, coding_change_col):
-            df['coding_pos'] = df[coding_change_col].str.extract(r'(\d+)[ACTG]>[ACTG](?:\s|$)')
+            df['coding_pos'] = df[coding_change_col].str.extract(r'(\d+)[ACTG]>[ACTG](?:\s|$)').astype(int)
             df['read_frame_pos'] = (((df['coding_pos'].astype(int) - 1) % 3) +1) 
             return df
 
@@ -151,7 +151,7 @@ class clipe_expt:
         clinvar_df = process_reading_frame(clinvar_df, 'Name')
 
         # capture gene orientation
-        clinvar_df.sort_values("pos")
+        clinvar_df = clinvar_df.sort_values("pos")
         if clinvar_df['coding_pos'].iloc[0] < clinvar_df['coding_pos'].iloc[-1]:
             coding_strand = "+"
         elif clinvar_df['coding_pos'].iloc[-1] < clinvar_df['coding_pos'].iloc[0]:
