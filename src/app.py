@@ -3,7 +3,6 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objs as go
 from datetime import date
-from Bio.Seq import Seq
 from clipe_guide_design_methods import *
 import tempfile
 import shutil
@@ -32,7 +31,7 @@ app_ui = ui.page_navbar(
     ui.head_content(
         ui.HTML("<!-- Google tag (gtag.js) -->\n<script async src='https://www.googletagmanager.com/gtag/js?id=G-MFQGJY5LJY'></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag('js', new Date());\n\n  gtag('config', 'G-MFQGJY5LJY');\n</script>"),
     ),
-    ui.nav_panel("pegRNA Designer", 
+    ui.nav_panel("epegRNA Designer", 
         ui.page_sidebar(
         ui.sidebar(
             ui.input_radio_buttons(
@@ -73,7 +72,7 @@ app_ui = ui.page_navbar(
         ),
         ui.layout_columns(
             ui.value_box(
-                "# pegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
+                "# epegRNA designs", ui.output_ui("total_pegs"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
             ),
             ui.value_box(
                 "# VUS variants", ui.output_ui("total_vus"),  theme = ui.value_box_theme(bg = "#e6f2fd", fg = "#0B538E")
@@ -88,7 +87,7 @@ app_ui = ui.page_navbar(
         ),
         ui.layout_columns(
             ui.card(
-                ui.card_header("pegRNA designs"), ui.output_data_frame("render_design_table"), full_screen=True
+                ui.card_header("epegRNA designs"), ui.output_data_frame("render_design_table"), full_screen=True
             ),
             ui.card(
                 ui.card_header(
@@ -99,7 +98,7 @@ app_ui = ui.page_navbar(
             ),
             ui.card(
                 ui.card_header(
-                    "pegRNA distribution",
+                    "epegRNA distribution",
                     class_="d-flex justify-content-between align-items-center",
                 ),
                 output_widget("peg_dist_chart"),
@@ -118,7 +117,7 @@ app_ui = ui.page_navbar(
     ui.nav_control(ui.a(ui.img(src="https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png", alt="Github", height="25px"), href='https://github.com/nbodkin/clipe_pegrna_designer', target="_blank")),
 
     title=ui.img(src="clipe_logo.png", alt="clipe logo", height="50px"),
-    window_title="CliPE pegRNA Designer",
+    window_title="CliPE epegRNA Designer",
     fillable=True,
 )
 
@@ -218,8 +217,8 @@ def server(input, output, session):
             "download_checkbox",  
             ui.span("Download the following files:", style="font-weight: bold;"),  
             {  
-            "peg_tables": "pegRNA designs and ordering (.csv, .xlsx)", 
-            "arch_tables": "archetypal pegRNA files (.csv, .txt)",
+            "peg_tables": "epegRNA designs and ordering (.csv, .xlsx)", 
+            "arch_tables": "archetypal epegRNA files (.csv, .txt)",
             "RTTs": "RTT data for downstream analyses (.csv, .fa)",
             "nicking_idt": "IDT nicking guide ordering files (.txt)"
             },
@@ -242,13 +241,13 @@ def server(input, output, session):
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
                 if "peg_tables" in files_to_download:
-                    peg_df.to_csv(temp_path / f"{file_prefix}full_pegRNA_designs.csv", index=False)
+                    peg_df.to_csv(temp_path / f"{file_prefix}full_epegRNA_designs.csv", index=False)
                     idt_df = peg_df[['editing_window', "full_peg"]]
                     idt_df['editing_window'] = idt_df['editing_window'].apply(lambda x: f"{file_prefix}window_{x}")
                     idt_df.columns = ["Pool name", "Sequence"]
                     idt_df.to_excel(temp_path / f"{file_prefix}full_IDT_opool_order_data.xlsx", index=False)
                 if "arch_tables" in files_to_download:
-                    arch_df.to_csv(temp_path / f"{file_prefix}archetypal_pegRNA_designs.csv", index=False)
+                    arch_df.to_csv(temp_path / f"{file_prefix}archetypal_epegRNA_designs.csv", index=False)
                     idt_df = prep_screening_order_df(file_prefix, arch_df)
                     idt_df[['name', 'oligo', 'scale', 'purification']].to_csv(temp_path / f"{file_prefix}archetypal_IDT_oligo_order_data.txt", sep="\t", index=False, header=False)
                 if "RTTs" in files_to_download:
