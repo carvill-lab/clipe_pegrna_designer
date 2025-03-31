@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 
 .DS_Store
+src/genome_files/hg38_fasta/*

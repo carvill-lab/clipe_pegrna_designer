@@ -8,7 +8,8 @@ COPY src/requirements.txt .
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 COPY src .
-
+RUN apt-get update && apt -y install rsync
+RUN python download_genome.py
 
 USER app
 EXPOSE 8080

@@ -1,8 +1,7 @@
 import pandas as pd
-from Bio import SeqIO
 from Bio.Seq import Seq
-import gzip
 from pathlib import Path
+from pyfaidx import Fasta
 pd.options.mode.copy_on_write = True
 
 class clipe_expt:
@@ -23,7 +22,7 @@ class clipe_expt:
         self.set_variant_locations()
 
         # pull in correct fasta
-        fasta_dir = str(Path(__file__).parent) +  "/genome_files/"
+        fasta_dir = str(Path(__file__).parent) +  "/genome_files/hg38_fasta/"
         self.set_ref_fasta(fasta_dir)
 
         # build dataframes with path, benign, and vus
@@ -83,7 +82,6 @@ class clipe_expt:
             dfs_to_return.append(pegrna_df)
 
         return dfs_to_return[0], dfs_to_return[1], top_windows
-    
 
     def set_ref_fasta(self, fasta_dir):
         # Get the unique chromosomes from the variant dataframe
@@ -95,8 +93,13 @@ class clipe_expt:
         if self.prog_bar:
             self.prog_bar.set(2, detail=f"Loading hg38 {chrom}")
         # Filter the REF_FASTA dictionary to include only the relevant chromosomes
-        path = fasta_dir + f"{chrom}.fa.gz"
-        self.ref_fasta = str(SeqIO.read(gzip.open(path, "rt"), "fasta").seq).upper()
+        path = fasta_dir + f"{chrom}.fa"
+        fasta_obj = Fasta(path, rebuild=False)
+        self.fasta_start = self.vars_start - 500 if self.vars_start - 500 > 0 else 0 # 1 indexed
+        fasta_end = self.vars_end + 500 # 1 indexed
+        roi_fasta = fasta_obj[chrom][self.fasta_start:fasta_end]
+        print(len(roi_fasta))
+        self.ref_fasta = str(roi_fasta.seq).upper()
 
 
     def set_variant_locations(self):
@@ -224,7 +227,8 @@ class clipe_expt:
         # find all GG or CC sites in the desired region
         pam_sites = []
         for i in range(start, stop-2):
-            potential_pam = self.ref_fasta[i-1:i+2] #convert to 0 indexing
+            local_fa_loc = i - self.fasta_start
+            potential_pam = self.ref_fasta[local_fa_loc-1:local_fa_loc+2] #convert to 0 indexing
             if potential_pam[1:] == "GG":
                 pam_sites.append({"pam_start_loc": i, "strand": "+"})
             if potential_pam[:-1] == "CC":
@@ -270,21 +274,21 @@ class clipe_expt:
     def design_pegrnas(self, window_start, window_end, peg_strand, window_df, stop_codons=False, guide_screening_mode=False):
         # convert back to 0 indexing
         if peg_strand == "+":
-            spacer_start = window_start-18 
-            spacer_end = window_start+1
+            spacer_start = window_start-18 - self.fasta_start
+            spacer_end = window_start+1 - self.fasta_start
             spacer = self.ref_fasta[spacer_start:spacer_end+1]
             pam = self.ref_fasta[spacer_end+1:spacer_end+4]
 
-            rtt_rev_temp = self.ref_fasta[window_start-1:window_end]
-            pbs_rev = self.ref_fasta[window_start-self.pbs_len-1:window_start-1]
+            rtt_rev_temp = self.ref_fasta[window_start-1- self.fasta_start:window_end- self.fasta_start]
+            pbs_rev = self.ref_fasta[window_start-self.pbs_len-1- self.fasta_start:window_start-1- self.fasta_start]
         elif peg_strand == "-":
-            spacer_start = window_end-3
-            spacer_end = window_end+16
+            spacer_start = window_end-3 - self.fasta_start
+            spacer_end = window_end+16 - self.fasta_start
             spacer = str(Seq(self.ref_fasta[spacer_start:spacer_end+1]).reverse_complement())
             pam = str(Seq(self.ref_fasta[spacer_start-3:spacer_start]).reverse_complement())
 
-            rtt_rev_temp = self.ref_fasta[window_start-1:window_end]
-            pbs_rev = str(Seq(self.ref_fasta[window_end:window_end+self.pbs_len]).reverse_complement())
+            rtt_rev_temp = self.ref_fasta[window_start-1- self.fasta_start:window_end- self.fasta_start]
+            pbs_rev = str(Seq(self.ref_fasta[window_end- self.fasta_start:window_end+self.pbs_len- self.fasta_start]).reverse_complement())
         else:
             return 
         
@@ -355,11 +359,13 @@ class clipe_expt:
             l_padding = padding_input - reading_frame + 3
             r_padding = padding_input + reading_frame - 1
 
-        ref_seq = self.ref_fasta[pos - l_padding-1 : pos + r_padding]
+        ref_seq = self.ref_fasta[pos - l_padding-1 -self.fasta_start: pos + r_padding-self.fasta_start]
         # add the edit to the sequence
         alt_seq = ref_seq[:l_padding] + alt + ref_seq[l_padding + 1 :]
         # create warning if ref doesn't match the reference genome
         if ref_seq[l_padding] != ref:
+            print(ref_seq[l_padding], ref)
+            print(ref_seq[l_padding -1 : l_padding+2], alt_seq[l_padding -1 : l_padding+2])
             print(f"Warning: Reference genome does not match the reference allele: {row['var_id']}")
             raise ValueError(f"Warning: Reference genome does not match the reference allele: {row['var_id']}")
         if (len(alt_seq)) % 3 != 0:
@@ -701,9 +707,9 @@ class clipe_expt:
         closest_site = pam_sites.iloc[pam_sites["pam_start_loc"].sub(pe_nick_site).abs().idxmin()]
         
         if closest_site['strand'] == "+":
-            sgrna = self.ref_fasta[closest_site["pam_start_loc"]-21 : closest_site["pam_start_loc"]-1]
+            sgrna = self.ref_fasta[closest_site["pam_start_loc"]-21 -self.fasta_start: closest_site["pam_start_loc"]-1-self.fasta_start]
         elif closest_site['strand'] == "-":
-            sgrna = str(Seq(self.ref_fasta[closest_site["pam_start_loc"] : closest_site["pam_start_loc"]+20]).reverse_complement())
+            sgrna = str(Seq(self.ref_fasta[closest_site["pam_start_loc"]-self.fasta_start : closest_site["pam_start_loc"]+20-self.fasta_start]).reverse_complement())
         else:
             return
 
