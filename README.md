@@ -16,6 +16,14 @@ CliPE pegRNA designer is available for use at [design.clipe-mave.org](https://de
 
 If you have used our design tools for your prime editing experiments, please cite our manuscript as follows: ____
 
+### Running Locally
+If you would like to run CliPE pegRNA designer locally, you can pull our docker image from Github and run with the following instructions. This should take no longer than 5 minutes to setup
+
+1. Download and install Docker, then open the application
+2. Using the command line, pull our docker image: `docker pull --platform linux/x86_64 ghcr.io/nbodkin/clipe_pegrna_designer:main`
+3. Using the command line, run the image: `docker run -p 8080:8080 nbodkin/clipe_pegrna_designer:main clipe_designer`
+4. Open up the webapp in your browser using http://localhost:8080
+
 ## Contributing
 
 We welcome contributions to our web application. If you would like to contribute, please fork the repository and submit a pull request.
