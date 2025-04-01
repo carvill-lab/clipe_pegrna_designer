@@ -2,10 +2,55 @@ import pandas as pd
 from Bio.Seq import Seq
 from pathlib import Path
 from pyfaidx import Fasta
+from cyvcf2 import VCF
 pd.options.mode.copy_on_write = True
+import ast
+
+class Gene:
+    def __init__(self, gene_name, transcript_id=None):
+        self.gene_name = gene_name.upper()
+        self.transcript_id, self.chrom_nc, self.chrom, self.strand = self.process_transcript_id(self.gene_name, './genome_files/hg38_transcripts.tsv', transcript_id)
+        self.cds_locations, self.exon_nums = self.find_coding_locations('./genome_files/hg38_transcript_cds_coords.tsv')
+
+    def __str__(self):
+        return f"Gene: {self.gene_name}\nTranscript: {self.transcript_id}\nChromosome: {self.chrom}\nStrand: {self.strand}\nCDS locations: {self.cds_locations}\nExon numbers: {self.exon_nums}"
+
+    def process_transcript_id(self, gene_name, gene_data_path, transcript_id):
+        all_gene_data = pd.read_csv(gene_data_path, sep="\t", header=0, index_col=False)
+        gene_data = all_gene_data[all_gene_data["gene_id"] == gene_name]
+        if len(gene_data) == 0:
+            raise ValueError(f"{gene_name} not found in hg38 gtf")
+        
+        chrom_nc = gene_data["chr"].values[0]
+        chrom =  int(chrom_nc.split("_")[1].split(".")[0])
+        chrom = "X" if chrom == 23 else "Y" if chrom == 24 else "unk" if chrom > 25 else str(chrom)
+        strand = gene_data["strand"].values[0]
+        transcripts = ast.literal_eval(gene_data["transcript_id"].values[0])    
+        transcripts = [tx.split(" (MANE)")[0] if " (MANE)" in tx else tx for tx in transcripts]
+
+        if transcript_id==None:
+            transcript_id = transcripts[0]
+        
+        if transcript_id in transcripts:
+            return transcript_id, chrom_nc, chrom, strand
+        else:
+            raise ValueError(f"{transcript_id} not valid transcript of {gene_name}: confirm that you are using NCBI transcript ids (NM_...)")
+
+
+    def find_coding_locations(self, transcript_coords_path):
+        all_tx_data = pd.read_csv(transcript_coords_path, sep="\t", header=0, index_col=False)
+        tx_data = all_tx_data[all_tx_data["transcript_id"] == self.transcript_id]
+        if len(tx_data) == 0:
+            raise ValueError(f"{self.transcript_id} coding entry not found in hg38")
+        
+        cds_locations = ast.literal_eval(tx_data["cds_coords"].values[0])
+        exon_nums = ast.literal_eval(tx_data["cds_exons"].values[0])
+
+        return cds_locations, exon_nums
+
 
 class clipe_expt:
-    def __init__ (self, transcript_name, clinvar_path, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
+    def __init__ (self, gene_name, transcript_id, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
         # input values
         self.pbs_len = int(pbs_len)
         self.rtt_len = int(rtt_len)
@@ -18,7 +63,9 @@ class clipe_expt:
         # process input files
         if self.prog_bar:
             self.prog_bar.set(1, detail="Processing inputs")
-        self.var_df, self.coding_strand = self.process_input_files(clinvar_path, gnomad_path, transcript_name)
+        self.gene = Gene(gene_name, transcript_id)
+        self.clinvar_df = self.build_clinvar_df("./genome_files/clinvar/")
+        self.var_df, self.coding_strand = self.process_input_files(gnomad_path, self.gene.transcript_id)
         self.set_variant_locations()
 
         # pull in correct fasta
@@ -107,16 +154,20 @@ class clipe_expt:
         self.vars_start = regions.loc["min", "pos"]
         self.vars_end = regions.loc["max", "pos"]
 
+    def build_clinvar_df(self, clinvar_folder):
+        # find the most recent clinvar file
+        clinvar_files = list(Path(clinvar_folder).glob("*.vcf"))
+        if len(clinvar_files) != 1:
+            raise ValueError("Clinvar folder must contain exactly one vcf file. Please alert developer")
+        clinvar_file = clinvar_files[0]
+        clinvar_vcf = VCF(clinvar_file, lazy=True)
+        clinvar_dfs = []
+        for region in self.gene.cds_locations:
+            clinvar_dfs.append(pd.DataFrame(clinvar_vcf(self.gene.chrom + ":" +str(region[0])+"-"+str(region[1]))))
 
-    def process_input_files(self, clinvar_csv_path, gnomad_csv_path, transcript_name):
-        # input validation
-        if not clinvar_csv_path.endswith(".txt") and not clinvar_csv_path.endswith(".tsv"):
-            raise ValueError("Clinvar file must be a txt or tsv file")
-        orig_clinvar_df = pd.read_csv(clinvar_csv_path, sep="\t")
-        desired_cols = ['Name', 'GRCh38Chromosome', 'GRCh38Location']
-        if not all([col in orig_clinvar_df.columns for col in desired_cols]):
-            raise ValueError("Clinvar file must contain columns: Name, GRCh38Chromosome, GRCh38Location")
+        return pd.concat(clinvar_dfs)
 
+    def process_input_files(self, gnomad_csv_path, transcript_name):
         # filter for variants in the transcript
         clinvar_df = orig_clinvar_df[orig_clinvar_df['Name'].str.contains(transcript_name, case=False)]
         

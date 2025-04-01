@@ -161,3 +161,5 @@ cython_debug/
 
 .DS_Store
 src/genome_files/hg38_fasta/*
+src/genome_files/clinvar/*
+src/genome_files/hg38.gtf.gz
