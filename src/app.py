@@ -4,6 +4,10 @@ import pandas as pd
 import plotly.graph_objs as go
 from datetime import date
 from clipe_guide_design_methods import *
+
+import concurrent.futures
+import asyncio
+
 import tempfile
 import shutil
 import gc
@@ -121,6 +125,23 @@ app_ui = ui.page_navbar(
     fillable=True,
 )
 
+def run_guide_design(transcript, length_pbs, length_rtt, num_designs, design_strategy, checkbox_group, allele_min, clinvar_file, gnomad_file, disrupt_pam):
+    with ui.Progress(min=0, max=6) as p:
+        p.set(0, message="Running")
+        expt = clipe_expt(transcript.split(" ")[0], clinvar_file, gnomad_file, length_pbs, length_rtt, num_designs, disrupt_pam, design_strategy, checkbox_group, allele_min, prog_bar=p)
+        peg_df, arch_df, windows = expt.run_guide_design()
+        p.set(5, detail="Finishing up")
+        output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
+        
+        #free up memory
+        del expt
+        gc.collect()
+        p.set(6)
+    
+    return peg_df, arch_df, output
+
+pool = concurrent.futures.ProcessPoolExecutor
+
 def server(input, output, session):
     example_bool = reactive.value(False)
     example_count = reactive.value(0)
@@ -188,23 +209,13 @@ def server(input, output, session):
                 gnomad_file = None
             else:
                 gnomad_file = gnomad_csv[0]["datapath"]
-        
-        with ui.Progress(min=0, max=6) as p:
-            p.set(0, message="Running")
-            expt = clipe_expt(transcript.split(" ")[0], clinvar_file, gnomad_file, length_pbs, length_rtt, num_designs, disrupt_pam, design_strategy, checkbox_group, allele_min, prog_bar=p)
-            peg_df, arch_df, windows = expt.run_guide_design()
-            p.set(5, detail="Finishing up")
-            peg_df_glob.set(peg_df)
-            arch_df_glob.set(arch_df)
 
-            output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
-            fish_df_glob.set(output[0])
-            fish_fa_txt_glob.set(output[1])
-            
-            #free up memory
-            del expt
-            gc.collect()
-            p.set(6)
+        loop = asyncio.get_event_loop()
+        peg_df, arch_df, output = await loop.run_in_executor(pool, run_guide_design, transcript, length_pbs, length_rtt, num_designs, design_strategy, checkbox_group, allele_min, clinvar_file, gnomad_file, disrupt_pam)
+        peg_df_glob.set(peg_df)
+        arch_df_glob.set(arch_df)
+        fish_df_glob.set(output[0])
+        fish_fa_txt_glob.set(output[1])
         
         # TODO: reduce sig figs in allele percentage
         ui.insert_ui(
