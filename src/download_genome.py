@@ -43,6 +43,7 @@ for file in files:
     # unzip the file
     os.system(f"gunzip {os.path.join(local_path, file)}")
     Fasta(f"{local_path}/{chr_name}.fa", build_index=True)
+# TODO check number of files downloaded 
 
 # -------
 
@@ -54,14 +55,18 @@ if os.path.exists(local_path):
 os.system(f"mkdir -p {local_path}")
 
 # pull the latest clinvar file
-rsync_command = f"rsync -az --info=progress2 --exclude='*papu*' --include='clinvar_*.vcf.gz' --exclude='*' rsync://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/ {local_path}"
+rsync_command = f"rsync -az --info=progress2 --exclude='*papu*' --include='clinvar_*.vcf.gz' --include='clinvar_*.tbi' --exclude='*' rsync://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/ {local_path}"
 run_rsync(rsync_command)
+# pull file name
+files = os.listdir(local_path)
+vcf_files = [f for f in files if f.endswith(".vcf.gz")]
+tbi_files = [f for f in files if f.endswith(".tbi")]
+if len(vcf_files) != 1 or len(tbi_files) != 1:
+    print(f"Warning: clinvar files not properly downloaded. {len(vcf_files)} vcf files and {len(tbi_files)} tbi files found.")
 
-if len(os.listdir(local_path)) > 1:
-    print("Warning: multiple clinvar files downloaded. Please check the rsync command.")
-
-print("Unzipping Clinvar file...")
-os.system(f"gunzip {local_path}/clinvar_*.vcf.gz")
+# print("Unzipping Clinvar file...")
+# os.system(f"gunzip {local_path}/{vcf_files[0]}")
+# os.system(f"mv {local_path}/{tbi_files[0]} {local_path}/{tbi_files[0].split('.')[0]}.vcf.tbi")
 
 
 # --------
