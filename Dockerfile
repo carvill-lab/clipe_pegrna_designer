@@ -12,7 +12,7 @@ RUN apt-get update && apt -y install rsync
 
 RUN python download_genome.py
 
-ADD ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
+ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
 RUN python download_clinvar.py
 
 USER app
