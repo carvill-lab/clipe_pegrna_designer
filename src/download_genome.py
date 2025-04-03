@@ -9,7 +9,7 @@ def run_rsync(os_command, max_attempts=5):
         if result.returncode == 0:
             break
         if i == max_attempts - 1:
-            raise RuntimeError(f"Rsync failed to pull genome files from UCSC/NCBI after {max_attempts} attempts. Alert Developer")
+            raise RuntimeError(f"Rsync failed to pull files from UCSC/NCBI after {max_attempts} attempts. Alert Developer")
         print(f"Attempt {i + 1} failed. Retrying...")
         
     return
@@ -45,30 +45,5 @@ for file in files:
     Fasta(f"{local_path}/{chr_name}.fa", build_index=True)
 # TODO check number of files downloaded 
 
-# -------
-
-print("Downloading latest ClinVar file")
-# create blank directory to store clinvar files
-local_path = "./genome_files/clinvar/"
-if os.path.exists(local_path):
-    os.system(f"rm -rf {local_path}")
-os.system(f"mkdir -p {local_path}")
-
-# pull the latest clinvar file
-rsync_command = f"rsync -az --info=progress2 --exclude='*papu*' --include='clinvar_*.vcf.gz' --include='clinvar_*.tbi' --exclude='*' rsync://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/ {local_path}"
-run_rsync(rsync_command)
-# pull file name
-files = os.listdir(local_path)
-vcf_files = [f for f in files if f.endswith(".vcf.gz")]
-tbi_files = [f for f in files if f.endswith(".tbi")]
-if len(vcf_files) != 1 or len(tbi_files) != 1:
-    print(f"Warning: clinvar files not properly downloaded. {len(vcf_files)} vcf files and {len(tbi_files)} tbi files found.")
-
-# print("Unzipping Clinvar file...")
-# os.system(f"gunzip {local_path}/{vcf_files[0]}")
-# os.system(f"mv {local_path}/{tbi_files[0]} {local_path}/{tbi_files[0].split('.')[0]}.vcf.tbi")
-
-
-# --------
 
 print("Done!")

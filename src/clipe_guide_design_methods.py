@@ -71,7 +71,7 @@ class clipe_expt:
 
         # process input files
         if self.prog_bar:
-            self.prog_bar.set(1, detail="Processing inputs")
+            self.prog_bar.set(1, detail="Searching ClinVar")
         self.gene = Gene(gene_name, transcript_id)
         clinvar_df = self.build_clinvar_df(str(Path(__file__).parent) + "/genome_files/clinvar/")
         self.var_df = self.process_input_files(clinvar_df, gnomad_path)
