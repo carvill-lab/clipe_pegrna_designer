@@ -59,7 +59,8 @@ app_ui = ui.page_navbar(
             ui.accordion(ui.accordion_panel('Additional Options',
                 ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
                 ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
-                ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
+                ui.input_checkbox("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", value=True, width="100%"),
+                ui.input_checkbox("excl_dup_guides", "Exclude spacers duplicated in genome?", value=True, width="100%"),
                 ui.input_file("gnomad_csv", ui.tooltip(ui.span("Choose gnomAD csv to upload  ", question_circle_fill),"This file is generated from gnomAD after searching for your gene, filtering as desired, and clicking \"Export variants\"",placement="right"), multiple=False),
                 ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
                 ),id="additional_options", multiple=False, open=False),
@@ -144,20 +145,16 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.action_button, ignore_init=True)
     def build_peg_df():
-        async_run_guide_design(input.gene(), input.transcript(), input.length_pbs(), input.length_rtt(), input.num_designs(), input.design_strategy(), input.checkbox_group(), input.allele_min(), input.gnomad_csv(), input.disrupt_pam())
+        async_run_guide_design(input.gene(), input.transcript(), input.length_pbs(), input.length_rtt(), input.num_designs(), input.design_strategy(), input.checkbox_group(), input.allele_min(), input.gnomad_csv(), input.disrupt_pam(), input.excl_dup_guides())
         
     
     @ui.bind_task_button(button_id="action_button")
     @reactive.extended_task
-    async def async_run_guide_design(gene_name, transcript, length_pbs, length_rtt, num_designs, design_strategy, checkbox_group, allele_min, gnomad_csv, disrupt_pam):
+    async def async_run_guide_design(gene_name, transcript, length_pbs, length_rtt, num_designs, design_strategy, checkbox_group, allele_min, gnomad_csv, disrupt_pam, excl_dup_guides):
         # remove download button if it exists
         ui.remove_ui("#download_button")
         ui.remove_ui("#download_checkbox")
         peg_df_glob.set(pd.DataFrame())
-        if disrupt_pam == "yes":
-            disrupt_pam = True
-        else:
-            disrupt_pam = False
         
         # validate input files exist
         if not gnomad_csv:
@@ -169,7 +166,7 @@ def server(input, output, session):
         
         with ui.Progress(min=0, max=6) as p:
             p.set(0, message="Running")
-            expt = clipe_expt(gene_name, transcript.split(" ")[0], gnomad_file, length_pbs, length_rtt, num_designs, disrupt_pam, design_strategy, checkbox_group, allele_min, prog_bar=p)
+            expt = clipe_expt(gene_name, transcript.split(" ")[0], gnomad_file, length_pbs, length_rtt, num_designs, disrupt_pam, excl_dup_guides, design_strategy, checkbox_group, allele_min, prog_bar=p)
             peg_df, arch_df, windows = expt.run_guide_design()
             p.set(5, detail="Finishing up")
             peg_df_glob.set(peg_df)

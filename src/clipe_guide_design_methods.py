@@ -61,12 +61,13 @@ class Gene:
         return cds_locations, exon_nums, cds_pos_map
 
 class clipe_expt:
-    def __init__ (self, gene_name, transcript_id, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
+    def __init__ (self, gene_name, transcript_id, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, exclude_dup_guides, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
         # input values
         self.pbs_len = int(pbs_len)
         self.rtt_len = int(rtt_len)
         self.num_windows = int(num_windows)
         self.disrupt_pam = bool(disrupt_pam)
+        self.exclude_dup_guides = bool(exclude_dup_guides)
         self.inclusion_types = list(inclusion_types)
         self.allele_count_min = allele_count_min
         self.prog_bar = prog_bar
@@ -278,7 +279,7 @@ class clipe_expt:
     def find_pam_sites(self, start, stop, unique_spacers_only=True):
         # find all GG or CC sites in the desired region
 if unique_spacers_only:
-            with gzip.open(str(Path(__file__).parent) +'/genome_files/bad_guides.pkl.gz', 'rb') as handle:
+            with gzip.open(str(Path(__file__).parent) +'/genome_files/dup_guides.pkl.gz', 'rb') as handle:
                 bad_spacers = pickle.load(handle)
         else:
             bad_spacers = set()
@@ -301,7 +302,7 @@ spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complem
     def find_variant_dense_windows(self, desired_var_df):
         #TODO: in future, can search only around exons of desired gene to speed up window finding
         windows = []
-        pam_sites = self.find_pam_sites(self.vars_start-20-self.rtt_len, self.vars_end+20+self.rtt_len) # add some padding to allow for spacers outside of the variant region
+        pam_sites = self.find_pam_sites(self.vars_start-20-self.rtt_len, self.vars_end+20+self.rtt_len, unique_spacers_only=self.exclude_dup_guides) # add some padding to allow for spacers outside of the variant region
         for _, row in pam_sites.iterrows():
             if row['strand'] == "+":
                 rtt_start = row['pam_start_loc'] - 3

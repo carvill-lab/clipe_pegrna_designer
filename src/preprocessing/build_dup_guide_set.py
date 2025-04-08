@@ -48,28 +48,27 @@ def main():
     print("iterating through chromosome fasta files to find unique spacers")
     print("this may take a while, and will use >20GB of memory")
     with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
-        non_uniques = executor.submit(preprocess_pams, './src/genome_files/hg38_fasta/').result()
-    #non_uniques = preprocess_pams('./src/genome_files/hg38_fasta/')
+        non_uniques = executor.submit(preprocess_pams, './genome_files/hg38_fasta/').result()
     
     print("exporting non-unique spacers with pickle")
-    with open('./src/genome_files/bad_guides.pkl',  'wb') as handle:
+    with open('./genome_files/bad_guides.pkl',  'wb') as handle:
         pickle.dump(non_uniques, handle)
     print("zipping pkl file")
-    os.system("gzip -9 ./src/genome_files/bad_guides.pkl")
+    os.system("gzip -9 ./genome_files/bad_guides.pkl")
 
 if __name__ == "__main__":
     main()
 
-def load_spacers():
-    with gzip.open('./src/genome_files/bad_guides.pkl.gz',  'rb') as handle:
-        bad_spacers = pickle.load(handle)
-    print(f"non-unique, bad spacers: {len(bad_spacers)}")
+# def load_spacers():
+#     with gzip.open('./genome_files/bad_guides.pkl.gz',  'rb') as handle:
+#         bad_spacers = pickle.load(handle)
+#     print(f"non-unique, bad spacers: {len(bad_spacers)}")
 
-    # print the first 10 bad spacers
-    print("first 10 bad spacers:")
-    for i, spacer in enumerate(bad_spacers):
-        if i == 10:
-            break
-        print(spacer)
+#     # print the first 10 bad spacers
+#     print("first 10 bad spacers:")
+#     for i, spacer in enumerate(bad_spacers):
+#         if i == 10:
+#             break
+#         print(spacer)
 
 #load_spacers()

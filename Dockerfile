@@ -10,10 +10,10 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY src .
 RUN apt-get update && apt-get -y install rsync
 
-RUN python download_genome.py
+RUN python preprocessing/download_genome.py
 
 ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
-RUN python download_clinvar.py
+RUN python preprocessing/download_clinvar.py
 
 USER app
 EXPOSE 8080
