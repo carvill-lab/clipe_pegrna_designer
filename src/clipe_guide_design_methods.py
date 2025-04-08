@@ -5,6 +5,8 @@ from pyfaidx import Fasta
 from cyvcf2 import VCF
 pd.options.mode.copy_on_write = True
 import ast
+import pickle
+import gzip
 
 class Gene:
     def __init__(self, gene_name, transcript_id=None):
@@ -273,15 +275,25 @@ class clipe_expt:
 
         #self.unclassified_df = self.var_df[~self.var_df['var_id'].isin(self.pathogenic_vars['var_id']) & ~self.var_df['var_id'].isin(self.benign_vars['var_id']) & ~self.var_df['var_id'].isin(self.VUS_vars['var_id'])]
 
-    def find_pam_sites(self, start, stop):
+    def find_pam_sites(self, start, stop, unique_spacers_only=True):
         # find all GG or CC sites in the desired region
+if unique_spacers_only:
+            with gzip.open(str(Path(__file__).parent) +'/genome_files/bad_guides.pkl.gz', 'rb') as handle:
+                bad_spacers = pickle.load(handle)
+        else:
+            bad_spacers = set()
+
         pam_sites = []
         for i in range(start, stop-2):
             local_fa_loc = i - self.fasta_start
             potential_pam = self.ref_fasta[local_fa_loc-1:local_fa_loc+2] #convert to 0 indexing
             if potential_pam[1:] == "GG":
+spacer = self.ref_fasta[local_fa_loc-20:local_fa_loc-1]
+                if spacer not in bad_spacers:
                 pam_sites.append({"pam_start_loc": i, "strand": "+"})
             if potential_pam[:-1] == "CC":
+spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complement())
+                if spacer not in bad_spacers:
                 pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
         return pd.DataFrame(pam_sites)
     
@@ -467,6 +479,7 @@ class clipe_expt:
         warnings = []
         seed_status = "-"
         pam_status = "-"
+#print(f"ref_seq: {ref_seq}, alt_seq: {alt_seq}, spacer: {spacer}, rtt: {rtt}")
 
         # find spacer in the input
         spacer_start, spacer_end, peg_strand = self.find_spacer(ref_seq, spacer)
@@ -605,6 +618,7 @@ class clipe_expt:
                 start = rtt_new[1:8].upper().find(pam_edit["old_pam_codon_region"]) + 1
                 if start == 0:
                     print("Error: old pam not found in rtt -- Alert Developer")
+print("rtt", rtt_new[1:8], "old_pam", pam_edit["old_pam_codon_region"])
                     raise ValueError("Error: old pam not found in rtt -- Alert Developer")
                 else:
                     rtt_new = rtt_new[:start] + pam_edit["new_pam_codon_region"] + rtt_new[start+6:]
@@ -742,8 +756,8 @@ class clipe_expt:
 
     def pick_nicking_guide(self, pe_nick_site, pe_nick_strand, min_dist = 40, max_dist = 100):
         # find all GG or CC sites in the desired region
-        pam_sites = self.find_pam_sites(pe_nick_site-max_dist, pe_nick_site-min_dist)
-        pam_sites = pd.concat([pam_sites, self.find_pam_sites(pe_nick_site+min_dist, pe_nick_site+max_dist)])
+        pam_sites = self.find_pam_sites(pe_nick_site-max_dist, pe_nick_site-min_dist, unique_spacers_only=False)
+        pam_sites = pd.concat([pam_sites, self.find_pam_sites(pe_nick_site+min_dist, pe_nick_site+max_dist, unique_spacers_only=False)])
         if pe_nick_strand == "+":
             pam_sites = pam_sites[pam_sites["strand"] == "-"]
         elif pe_nick_strand == "-":

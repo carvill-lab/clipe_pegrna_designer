@@ -18,7 +18,7 @@ gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 
-cds_data = pd.read_csv(app_dir / "genome_files/hg38_transcript_coords.tsv", sep="\t")
+cds_data = pd.read_csv(app_dir / "genome_files/hg38_transcript_cds_lengths.tsv", sep="\t")
 cds_data['cds_lengths'] = cds_data['cds_lengths'].apply(eval)
 cds_data['cds_exons'] = cds_data['cds_exons'].apply(eval)
 
@@ -266,19 +266,19 @@ def server(input, output, session):
     def total_vus():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])].shape[0]
+            return peg_df[peg_df['Germline classification'].isin(["Uncertain_significance", "Conflicting_classifications_of_pathogenicity"])].shape[0]
     
     @render.ui
     def total_plp():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])].shape[0]
+            return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic"])].shape[0]
     
     @render.ui
     def total_blb():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])].shape[0]
+            return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely_benign", "Benign/Likely_benign"])].shape[0]
 
     @render_plotly
     @reactive.event(peg_df_glob, ignore_init=True)
