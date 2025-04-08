@@ -4,9 +4,6 @@ from pathlib import Path
 from pyfaidx import Fasta
 from cyvcf2 import VCF
 pd.options.mode.copy_on_write = True
-import ast
-import pickle
-import gzip
 
 class Gene:
     def __init__(self, gene_name, transcript_id=None):
@@ -440,15 +437,20 @@ spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complem
     # TODO: DO I NEED THIS
     def find_spacer(self, ref_seq, spacer):
         # input validation: find spacer in the input
-        orientation = "+"
-        spacer_start = ref_seq.find(spacer)
-        if spacer_start == -1:
-            ref_seq = str(Seq(ref_seq).reverse_complement())
-            spacer_start = ref_seq.find(spacer)
-            if spacer_start == -1:
+        pos_matches = [m.start() for m in re.finditer(f'(?={spacer})', ref_seq)]
+        neg_matches = [m.start() for m in re.finditer(f'(?={spacer})', str(Seq(ref_seq).reverse_complement()))]
+        if len(pos_matches) == 0 and len(neg_matches) == 0:
                 return "spacer not found", -1, -1
+        if len(pos_matches) + len(neg_matches) > 1:
+            return "multiple spacers found", -1, -1
+        if len(pos_matches) == 1:
+            spacer_start = pos_matches[0]
+            orientation = "+"
             else:
+            ref_seq = str(Seq(ref_seq).reverse_complement())
+            spacer_start = neg_matches[0]
                 orientation = "-"
+
         spacer_end = spacer_start + len(spacer)
 
         return spacer_start, spacer_end, orientation
@@ -494,6 +496,9 @@ spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complem
 
         if spacer_start == "spacer not found":
             warnings.append("!!spacer not found in reference seq!!")
+            return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
+        if spacer_start == "multiple spacers found":
+            warnings.append("!!spacer found >1 times in reference seq - turn on duplicated spacer exclusion!!")
             return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
 
         # check if pam has been disrupted by edit
