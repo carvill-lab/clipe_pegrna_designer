@@ -173,7 +173,7 @@ class clipe_expt:
         clinvar_files = list(Path(clinvar_folder).glob("*.gz"))
         if len(clinvar_files) != 1:
             raise ValueError("Clinvar folder must contain exactly one vcf and one tbi file. Please alert developer")
-        clinvar_file = clinvar_files[0]
+        clinvar_file = clinvar_files[0] 
         clinvar_vcf = VCF(clinvar_file, lazy=True)
         clinvar_vars = {'clinvar_id': [], 'chr': [], 'pos': [], 'ref': [], 'alt': [], 'Germline classification': [], 'hgvs': [], 'clnvc':[], 'MC': []}
         for region in self.gene.cds_locations:
@@ -204,7 +204,7 @@ class clipe_expt:
         clinvar_df['coding_pos'] = clinvar_df['pos'].apply(lambda x: self.gene.cds_pos_map.get(x, None))
 
         return clinvar_df
-        
+
     def process_input_files(self, clinvar_df, gnomad_csv_path):
         # error out if less than three variants
         if len(clinvar_df) < 3:
@@ -214,7 +214,7 @@ class clipe_expt:
         def process_reading_frame(df):
             df['read_frame_pos'] = (((df['coding_pos'].astype(int) - 1) % 3) +1) 
             return df
-
+        
         clinvar_df = process_reading_frame(clinvar_df) 
         clinvar_df['var_id'] = clinvar_df.apply(lambda x: f"{x['chr']}_{x['pos']}_{x['ref']}_{x['alt']}", axis=1)
         # clean up df
@@ -279,7 +279,7 @@ class clipe_expt:
 
     def find_pam_sites(self, start, stop, unique_spacers_only=True):
         # find all GG or CC sites in the desired region
-if unique_spacers_only:
+        if unique_spacers_only:
             with gzip.open(str(Path(__file__).parent) +'/genome_files/dup_guides.pkl.gz', 'rb') as handle:
                 bad_spacers = pickle.load(handle)
         else:
@@ -290,13 +290,13 @@ if unique_spacers_only:
             local_fa_loc = i - self.fasta_start
             potential_pam = self.ref_fasta[local_fa_loc-1:local_fa_loc+2] #convert to 0 indexing
             if potential_pam[1:] == "GG":
-spacer = self.ref_fasta[local_fa_loc-20:local_fa_loc-1]
+                spacer = self.ref_fasta[local_fa_loc-20:local_fa_loc-1]
                 if spacer not in bad_spacers:
-                pam_sites.append({"pam_start_loc": i, "strand": "+"})
+                    pam_sites.append({"pam_start_loc": i, "strand": "+"})
             if potential_pam[:-1] == "CC":
-spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complement())
+                spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complement())
                 if spacer not in bad_spacers:
-                pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
+                    pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
         return pd.DataFrame(pam_sites)
     
 
@@ -444,16 +444,16 @@ spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complem
         pos_matches = [m.start() for m in re.finditer(f'(?={spacer})', ref_seq)]
         neg_matches = [m.start() for m in re.finditer(f'(?={spacer})', str(Seq(ref_seq).reverse_complement()))]
         if len(pos_matches) == 0 and len(neg_matches) == 0:
-                return "spacer not found", -1, -1
+            return "spacer not found", -1, -1
         if len(pos_matches) + len(neg_matches) > 1:
             return "multiple spacers found", -1, -1
         if len(pos_matches) == 1:
             spacer_start = pos_matches[0]
             orientation = "+"
-            else:
+        else:
             ref_seq = str(Seq(ref_seq).reverse_complement())
             spacer_start = neg_matches[0]
-                orientation = "-"
+            orientation = "-"
 
         spacer_end = spacer_start + len(spacer)
 
@@ -486,8 +486,8 @@ spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complem
         warnings = []
         seed_status = "-"
         pam_status = "-"
-#print(f"ref_seq: {ref_seq}, alt_seq: {alt_seq}, spacer: {spacer}, rtt: {rtt}")
-
+        #print(f"ref_seq: {ref_seq}, alt_seq: {alt_seq}, spacer: {spacer}, rtt: {rtt}")
+    
         # find spacer in the input
         spacer_start, spacer_end, peg_strand = self.find_spacer(ref_seq, spacer)
         
@@ -628,7 +628,7 @@ spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complem
                 start = rtt_new[1:8].upper().find(pam_edit["old_pam_codon_region"]) + 1
                 if start == 0:
                     print("Error: old pam not found in rtt -- Alert Developer")
-print("rtt", rtt_new[1:8], "old_pam", pam_edit["old_pam_codon_region"])
+                    print("rtt", rtt_new[1:8], "old_pam", pam_edit["old_pam_codon_region"])
                     raise ValueError("Error: old pam not found in rtt -- Alert Developer")
                 else:
                     rtt_new = rtt_new[:start] + pam_edit["new_pam_codon_region"] + rtt_new[start+6:]
