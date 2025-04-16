@@ -4,7 +4,7 @@ name: Fly Deploy Dev
 on:
   push:
     branches:
-      - local-clinvar
+      - dev
 jobs:
   deploy:
     name: Deploy app
