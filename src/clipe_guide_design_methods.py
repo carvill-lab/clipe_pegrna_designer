@@ -120,14 +120,10 @@ class clipe_expt:
         # filter for variants in the transcript
         clinvar_df = orig_clinvar_df[orig_clinvar_df['Name'].str.contains(transcript_name, case=False)]
         
-        def filter_out_non_missense(df, protein_change_col, keep_synonymous=False):
+        def filter_out_non_missense(df, protein_change_col):
             # pull out protein change and drop rows without protein change (unless it's synonymous)
-            # TODO FIX TO KEEP SYN
             df['protein_change'] = df[protein_change_col].str.extract(r'p\.([A-Z][a-z]{2}\d+[A-Z][a-z]{2})')
             df = df.dropna(subset=['protein_change'])
-
-            if not keep_synonymous:
-                df = df[~df['protein_change'].str.contains("=")]
 
             # drop non-missense (nonsense, start/stop loss)
             df = df[~df['protein_change'].str.contains("Ter")]
@@ -140,7 +136,7 @@ class clipe_expt:
             return df
 
         # error out if less than three variants
-        clinvar_df = filter_out_non_missense(clinvar_df, 'Name', keep_synonymous=False)
+        clinvar_df = filter_out_non_missense(clinvar_df, 'Name')
         if len(clinvar_df) < 3:
             raise ValueError("Clinvar file must have at least three variants")
         
@@ -187,13 +183,16 @@ class clipe_expt:
             gnomad_df_no_clinvar = gnomad_df[~gnomad_df['var_id'].isin(clinvar_df['var_id'])]
 
             # pull out protein change and drop rows without protein change
-            # drop non-missense (nonsense, start/stop loss)
-            gnomad_df_no_clinvar = filter_out_non_missense(gnomad_df_no_clinvar, 'Protein Consequence', keep_synonymous=True)
+            # drop non-missense (nonsense, start/stop loss). this keeps synonymous as gnomad notation is p.Met1Met
+            gnomad_df_no_clinvar = filter_out_non_missense(gnomad_df_no_clinvar, 'Protein Consequence')
 
             gnomad_df_no_clinvar['chr'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[0]))
             gnomad_df_no_clinvar['pos'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[1]))
             gnomad_df_no_clinvar['ref'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[2])
             gnomad_df_no_clinvar['alt'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[3])
+            # drop non-SNVs
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[gnomad_df_no_clinvar['ref'].str.len() == 1]
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[gnomad_df_no_clinvar['alt'].str.len() == 1]
             gnomad_df_no_clinvar = process_reading_frame(gnomad_df_no_clinvar, 'Transcript Consequence')
             gnomad_df_no_clinvar = gnomad_df_no_clinvar[['var_id', 'chr', 'pos', 'ref', 'alt', 'protein_change', 'coding_pos', 'read_frame_pos','Allele Count', 'Allele Number', 'Allele Frequency']]
             var_df = pd.concat([clinvar_w_gnomad, gnomad_df_no_clinvar])
@@ -765,7 +764,8 @@ def build_files_for_jellyfish(final_df, screening_df=None):
     if rtt_df["var_id"].duplicated().any():
         print("Duplicate var_ids in the final_df")
         raise ValueError("Duplicate var_ids in the final_df")
-    if rtt_df["rtt"].duplicated().any():
+    no_syn_rtt_df = rtt_df[rtt_df["var_id"].str.contains("syn_edit") == False]
+    if no_syn_rtt_df["rtt"].duplicated().any():
         print("Duplicate rtts in the final_df")
         raise ValueError("Duplicate rtts in the final_df")
     
