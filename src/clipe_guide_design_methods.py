@@ -235,7 +235,7 @@ class clipe_expt:
             gnomad_df_no_clinvar = gnomad_df[~gnomad_df['var_id'].isin(clinvar_df['var_id'])]
 
             # pull out protein change and drop rows without protein change
-            gnomad_df_no_clinvar['protein_change'] = gnomad_df_no_clinvar['Protein Consequence'].str.extract(r'p\.([A-Z][a-z]{2}\d+[A-Z][a-z]{2})')
+            gnomad_df_no_clinvar['protein_change'] = gnomad_df_no_clinvar['Protein Consequence'].str.extract(r'p\.([A-Z][a-z]{2}\d+(?:[A-Z][a-z]{2}|=))')
             gnomad_df_no_clinvar = gnomad_df_no_clinvar.dropna(subset=['protein_change'])
             
             # drop non-missense (nonsense, start/stop loss)
@@ -922,3 +922,13 @@ def make_synonymous_changes(codons):
             if CODON_DICT[key][0] == CODON_DICT[codon][0] and key != codon:
                 codon_changes[codon].append({'syn_codon': key, 'aa': CODON_DICT[key][0], 'freq': CODON_DICT[key][2]})
     return codon_changes
+
+# def main():
+#     # example usage
+#     expt = clipe_expt('TSC2', 'NM_000548.5', './example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv', 10, 40, 10, True, 'vus', ['BLB'], allele_count_min=5, prog_bar=None)
+#     expt.var_df.to_csv('var_df.csv', index=False)
+#     peg_df, arch_df, windows = expt.run_guide_design()
+#     peg_df.to_csv('peg_df.csv', index=False)
+#     output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
+
+# main()

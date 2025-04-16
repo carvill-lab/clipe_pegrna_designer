@@ -7,7 +7,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from tqdm import tqdm
 
-
+# TODO limit to 100 bp before and after coding regions
 def preprocess_pams(path_str):
     genome_fastas = list(Path(path_str).rglob("*.fa"))
     unique_spacers = set()
