@@ -122,8 +122,7 @@ class clipe_expt:
         
         def filter_out_non_missense(df, protein_change_col, keep_synonymous=False):
             # pull out protein change and drop rows without protein change (unless it's synonymous)
-            # TODO FIX TO KEEP SYN
-            df['protein_change'] = df[protein_change_col].str.extract(r'p\.([A-Z][a-z]{2}\d+[A-Z][a-z]{2})')
+            df['protein_change'] = df[protein_change_col].str.extract(r'p\.([A-Z][a-z]{2}\d+(?:[A-Z][a-z]{2}|=))')
             df = df.dropna(subset=['protein_change'])
 
             if not keep_synonymous:
