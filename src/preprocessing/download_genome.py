@@ -1,5 +1,6 @@
 import os
 from pyfaidx import Fasta
+
 import subprocess
 
 def run_rsync(os_command, max_attempts=5):
@@ -27,6 +28,7 @@ if os.path.exists(local_path):
     os.system(f"rm -rf {local_path}")
 os.system(f"mkdir -p {local_path}")
 
+
 # download the hg38 chr files
 print("Downloading hg38 genome files from UCSC...")
 rsync_command = f"rsync -az --info=progress2 --include='chr?.fa.gz' --include='chr??.fa.gz' --exclude='*' rsync://hgdownload.cse.ucsc.edu/goldenPath/hg38/chromosomes/ {local_path}" 
@@ -43,6 +45,7 @@ for file in files:
     # unzip the file
     os.system(f"gunzip {os.path.join(local_path, file)}")
     Fasta(f"{local_path}/{chr_name}.fa", build_index=True)
+
 # TODO check number of files downloaded 
 
 
