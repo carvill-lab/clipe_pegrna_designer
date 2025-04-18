@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - local-clinvar
+
 jobs:
   deploy:
     name: Deploy app

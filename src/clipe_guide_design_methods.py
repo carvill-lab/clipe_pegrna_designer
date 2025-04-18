@@ -168,6 +168,7 @@ class clipe_expt:
         self.vars_start = regions.loc["min", "pos"]
         self.vars_end = regions.loc["max", "pos"]
 
+
     def build_clinvar_df(self, clinvar_folder):
         # find the most recent clinvar file
         clinvar_files = list(Path(clinvar_folder).glob("*.gz"))
@@ -247,6 +248,10 @@ class clipe_expt:
             gnomad_df_no_clinvar['pos'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[1]))
             gnomad_df_no_clinvar['ref'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[2])
             gnomad_df_no_clinvar['alt'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[3])
+            # drop non-SNVs
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[gnomad_df_no_clinvar['ref'].str.len() == 1]
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[gnomad_df_no_clinvar['alt'].str.len() == 1]
+            
             gnomad_df_no_clinvar['coding_pos'] = gnomad_df_no_clinvar['Transcript Consequence'].str.extract(r'(\d+)[ACTG]>[ACTG](?:\s|$)').astype(int)
             gnomad_df_no_clinvar = process_reading_frame(gnomad_df_no_clinvar)
             gnomad_df_no_clinvar = gnomad_df_no_clinvar[['var_id', 'chr', 'pos', 'ref', 'alt', 'coding_pos', 'read_frame_pos','Allele Count', 'Allele Number', 'Allele Frequency']]
@@ -840,7 +845,8 @@ def build_files_for_jellyfish(final_df, screening_df=None):
     if rtt_df["var_id"].duplicated().any():
         print("Duplicate var_ids in the final_df")
         raise ValueError("Duplicate var_ids in the final_df")
-    if rtt_df["rtt"].duplicated().any():
+    no_syn_rtt_df = rtt_df[rtt_df["var_id"].str.contains("syn_edit") == False]
+    if no_syn_rtt_df["rtt"].duplicated().any():
         print("Duplicate rtts in the final_df")
         raise ValueError("Duplicate rtts in the final_df")
     

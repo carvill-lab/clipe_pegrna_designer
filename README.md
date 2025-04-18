@@ -26,7 +26,7 @@ docker pull --platform linux/x86_64 ghcr.io/nbodkin/clipe_pegrna_designer:main
 ```
 3. Using the command line, run the image:
 ```
-docker run -p 8080:8080 nbodkin/clipe_pegrna_designer:main clipe_designer
+docker run -p 8080:8080 --name clipe ghcr.io/nbodkin/clipe_pegrna_designer:main
 ```
 4. Open up the webapp in your browser using http://localhost:8080
 
