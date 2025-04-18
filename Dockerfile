@@ -12,6 +12,9 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY src/preprocessing preprocessing
 RUN python preprocessing/download_genome.py
 
+ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
+RUN python preprocessing/download_clinvar.py
+
 COPY src .
 
 USER app

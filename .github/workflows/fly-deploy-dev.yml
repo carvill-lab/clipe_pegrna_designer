@@ -4,7 +4,8 @@ name: Fly Deploy Dev
 on:
   push:
     branches:
-      - dev
+      - local-clinvar
+
 jobs:
   deploy:
     name: Deploy app
@@ -16,3 +17,4 @@ jobs:
       - run: flyctl deploy --remote-only -a clipe-dev
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+

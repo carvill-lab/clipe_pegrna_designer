@@ -1,24 +1,84 @@
+import ast
+import pickle
+import gzip
+import re
 import pandas as pd
 from Bio.Seq import Seq
 from pathlib import Path
 from pyfaidx import Fasta
+from cyvcf2 import VCF
 pd.options.mode.copy_on_write = True
 
+class Gene:
+    def __init__(self, gene_name, transcript_id=None):
+        self.gene_name = gene_name.upper()
+        self.transcript_id, self.chrom_nc, self.chrom, self.strand = self.process_transcript_id(self.gene_name, str(Path(__file__).parent) +'/genome_files/hg38_transcripts.tsv', transcript_id)
+        self.cds_locations, self.exon_nums, self.cds_pos_map = self.find_coding_locations(str(Path(__file__).parent) +'/genome_files/hg38_transcript_cds_coords.tsv')
+
+    def __str__(self):
+        return f"Gene: {self.gene_name}\nTranscript: {self.transcript_id}\nChromosome: {self.chrom}\nStrand: {self.strand}\nCDS locations: {self.cds_locations}\nExon numbers: {self.exon_nums}"
+
+    def process_transcript_id(self, gene_name, gene_data_path, transcript_id):
+        all_gene_data = pd.read_csv(gene_data_path, sep="\t", header=0, index_col=False)
+        gene_data = all_gene_data[all_gene_data["gene_id"] == gene_name]
+        if len(gene_data) == 0:
+            raise ValueError(f"{gene_name} not found in hg38 gtf")
+        
+        chrom_nc = gene_data["chr"].values[0]
+        chrom =  int(chrom_nc.split("_")[1].split(".")[0])
+        chrom = "X" if chrom == 23 else "Y" if chrom == 24 else "unk" if chrom > 25 else str(chrom)
+        strand = gene_data["strand"].values[0]
+        transcripts = ast.literal_eval(gene_data["transcript_id"].values[0])    
+        transcripts = [tx.split(" (MANE)")[0] if " (MANE)" in tx else tx for tx in transcripts]
+
+        if transcript_id==None:
+            transcript_id = transcripts[0]
+        
+        if transcript_id in transcripts:
+            return transcript_id, chrom_nc, chrom, strand
+        else:
+            raise ValueError(f"{transcript_id} not valid transcript of {gene_name}: confirm that you are using NCBI transcript ids (NM_...)")
+
+
+    def find_coding_locations(self, transcript_coords_path):
+        all_tx_data = pd.read_csv(transcript_coords_path, sep="\t", header=0, index_col=False)
+        tx_data = all_tx_data[all_tx_data["transcript_id"] == self.transcript_id]
+        if len(tx_data) == 0:
+            raise ValueError(f"{self.transcript_id} coding entry not found in hg38")
+        
+        cds_locations = ast.literal_eval(tx_data["cds_coords"].values[0])
+        exon_nums = ast.literal_eval(tx_data["cds_exons"].values[0])
+        cds_pos_map = {}
+        c_loc = 1
+        for (start, end) in cds_locations:
+            if self.strand == "+":
+                positions = list(range(start, end+1))
+            else:
+                positions = list(range(end, start-1, -1))
+            for j in positions:
+                cds_pos_map[j] = c_loc
+                c_loc += 1
+
+        return cds_locations, exon_nums, cds_pos_map
+
 class clipe_expt:
-    def __init__ (self, transcript_name, clinvar_path, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
+    def __init__ (self, gene_name, transcript_id, gnomad_path, pbs_len, rtt_len, num_windows, disrupt_pam, exclude_dup_guides, design_strategy, inclusion_types, allele_count_min=5, prog_bar=None):
         # input values
         self.pbs_len = int(pbs_len)
         self.rtt_len = int(rtt_len)
         self.num_windows = int(num_windows)
         self.disrupt_pam = bool(disrupt_pam)
+        self.exclude_dup_guides = bool(exclude_dup_guides)
         self.inclusion_types = list(inclusion_types)
         self.allele_count_min = allele_count_min
         self.prog_bar = prog_bar
 
         # process input files
         if self.prog_bar:
-            self.prog_bar.set(1, detail="Processing inputs")
-        self.var_df, self.coding_strand = self.process_input_files(clinvar_path, gnomad_path, transcript_name)
+            self.prog_bar.set(1, detail="Searching ClinVar")
+        self.gene = Gene(gene_name, transcript_id)
+        clinvar_df = self.build_clinvar_df(str(Path(__file__).parent) + "/genome_files/clinvar/")
+        self.var_df = self.process_input_files(clinvar_df, gnomad_path)
         self.set_variant_locations()
 
         # pull in correct fasta
@@ -42,6 +102,8 @@ class clipe_expt:
         if self.prog_bar:
             self.prog_bar.set(3, detail="Finding variant dense regions")
         top_windows = self.find_variant_dense_windows(self.desired_vars)
+        if len(top_windows) == 0:
+            raise ValueError("No variant windows identified. Alert Developer")
         include_ptcs = False
         # based on inclusion types, add additional vars to windows
         vars_to_include = self.desired_vars
@@ -87,7 +149,7 @@ class clipe_expt:
         # Get the unique chromosomes from the variant dataframe
         unique_chromosomes = self.var_df['chr'].unique()
         if len(unique_chromosomes) > 1:
-            print("Multiple chromosomes detected in the input file.")
+            print(unique_chromosomes)
             raise ValueError("Multiple chromosomes detected in the input file.")
         chrom = f'chr{unique_chromosomes[0]}'
         if self.prog_bar:
@@ -98,7 +160,6 @@ class clipe_expt:
         self.fasta_start = self.vars_start - 500 if self.vars_start - 500 > 0 else 0 # 1 indexed
         fasta_end = self.vars_end + 500 # 1 indexed
         roi_fasta = fasta_obj[chrom][self.fasta_start:fasta_end]
-        print(len(roi_fasta))
         self.ref_fasta = str(roi_fasta.seq).upper()
 
 
@@ -108,65 +169,57 @@ class clipe_expt:
         self.vars_end = regions.loc["max", "pos"]
 
 
-    def process_input_files(self, clinvar_csv_path, gnomad_csv_path, transcript_name):
-        # input validation
-        if not clinvar_csv_path.endswith(".txt") and not clinvar_csv_path.endswith(".tsv"):
-            raise ValueError("Clinvar file must be a txt or tsv file")
-        orig_clinvar_df = pd.read_csv(clinvar_csv_path, sep="\t")
-        desired_cols = ['Name', 'GRCh38Chromosome', 'GRCh38Location']
-        if not all([col in orig_clinvar_df.columns for col in desired_cols]):
-            raise ValueError("Clinvar file must contain columns: Name, GRCh38Chromosome, GRCh38Location")
+    def build_clinvar_df(self, clinvar_folder):
+        # find the most recent clinvar file
+        clinvar_files = list(Path(clinvar_folder).glob("*.gz"))
+        if len(clinvar_files) != 1:
+            raise ValueError("Clinvar folder must contain exactly one vcf and one tbi file. Please alert developer")
+        clinvar_file = clinvar_files[0] 
+        clinvar_vcf = VCF(clinvar_file, lazy=True)
+        clinvar_vars = {'clinvar_id': [], 'chr': [], 'pos': [], 'ref': [], 'alt': [], 'Germline classification': [], 'hgvs': [], 'clnvc':[], 'MC': []}
+        for region in self.gene.cds_locations:
+            reg_vcf = clinvar_vcf(self.gene.chrom + ":" +str(region[0])+"-"+str(region[1]))
+            for var in reg_vcf:
+                if len(var.ALT) != 1:
+                    print(f"Warning: Clinvar variant {var.ID} has {len(var.ALT)} ALT alleles. Skipping.")
+                    continue
+                # check if the variant is in the correct gene
+                clinvar_vars['clinvar_id'].append(var.ID)
+                clinvar_vars['chr'].append(str(var.CHROM))
+                clinvar_vars['pos'].append(var.POS)
+                clinvar_vars['ref'].append(var.REF)
+                clinvar_vars['alt'].append(var.ALT[0])
+                clinvar_vars['Germline classification'].append(var.INFO.get('CLNSIG'))
+                clinvar_vars['hgvs'].append(var.INFO.get('CLNHGVS'))
+                clinvar_vars['clnvc'].append(var.INFO.get('CLNVC'))
+                clinvar_vars['MC'].append(var.INFO.get('MC'))
+        clinvar_df = pd.DataFrame(clinvar_vars)
+        # remove non-SNVs
+        clinvar_df = clinvar_df[clinvar_df['clnvc'] == 'single_nucleotide_variant']
+        # remove "not provided" variants from clnsig
+        clinvar_df = clinvar_df[clinvar_df['Germline classification'] != "not provided"]
+        # keep only missense variants - NOTE this includes missense variants on all transcripts in this region -- will need to filter non-missense later
+        clinvar_df = clinvar_df[~clinvar_df['MC'].isna()]
+        clinvar_df = clinvar_df[clinvar_df['MC'].str.contains("missense")]
+        # add coding position
+        clinvar_df['coding_pos'] = clinvar_df['pos'].apply(lambda x: self.gene.cds_pos_map.get(x, None))
 
-        # filter for variants in the transcript
-        clinvar_df = orig_clinvar_df[orig_clinvar_df['Name'].str.contains(transcript_name, case=False)]
-        
-        def filter_out_non_missense(df, protein_change_col):
-            # pull out protein change and drop rows without protein change (unless it's synonymous)
-            df['protein_change'] = df[protein_change_col].str.extract(r'p\.([A-Z][a-z]{2}\d+[A-Z][a-z]{2})')
-            df = df.dropna(subset=['protein_change'])
+        return clinvar_df
 
-            # drop non-missense (nonsense, start/stop loss)
-            df = df[~df['protein_change'].str.contains("Ter")]
-            df = df[~df['protein_change'].str.contains(r'Met1[A-Z][a-z]{2}')]
-            return df
+    def process_input_files(self, clinvar_df, gnomad_csv_path):
+        # error out if less than three variants
+        if len(clinvar_df) < 3:
+            raise ValueError("Clinvar must have at least three missense variants")
         
-        def process_reading_frame(df, coding_change_col):
-            df['coding_pos'] = df[coding_change_col].str.extract(r'(\d+)[ACTG]>[ACTG](?:\s|$)').astype(int)
+        # process reading frame
+        def process_reading_frame(df):
             df['read_frame_pos'] = (((df['coding_pos'].astype(int) - 1) % 3) +1) 
             return df
-
-        # error out if less than three variants
-        clinvar_df = filter_out_non_missense(clinvar_df, 'Name')
-        if len(clinvar_df) < 3:
-            raise ValueError("Clinvar file must have at least three variants")
         
-        # create standard SNV name
-        clinvar_df['snv'] = clinvar_df['Name'].str.extract(r'\d+([ACTG]>[ACTG])(?:\s|$)')
-        clinvar_df = clinvar_df.dropna(subset=['snv', 'GRCh38Chromosome', 'GRCh38Location']) # keep SNV only
-        clinvar_df['chr'] = clinvar_df['GRCh38Chromosome'].astype(int)
-        clinvar_df['pos'] = clinvar_df['GRCh38Location'].astype(int)
-        clinvar_df['ref'] = clinvar_df['snv'].apply(lambda x: x[0])
-        clinvar_df['alt'] = clinvar_df['snv'].apply(lambda x: x[-1])
-        clinvar_df = process_reading_frame(clinvar_df, 'Name')
-
-        # capture gene orientation
-        clinvar_df = clinvar_df.sort_values("pos")
-        if clinvar_df['coding_pos'].iloc[0] < clinvar_df['coding_pos'].iloc[-1]:
-            coding_strand = "+"
-        elif clinvar_df['coding_pos'].iloc[-1] < clinvar_df['coding_pos'].iloc[0]:
-            coding_strand = "-"
-        else:
-            print("Error: gene strand could not be identified")
-            raise ValueError("Alert Developer - gene strand could not be identified")
-        
-        if coding_strand == "-":
-            # necessary as clinvar reports ref and alt on the coding strand. This code reports all variation on the + strand
-            clinvar_df['ref'] = clinvar_df['ref'].apply(lambda x: str(Seq(x).reverse_complement()))
-            clinvar_df['alt'] = clinvar_df['alt'].apply(lambda x: str(Seq(x).reverse_complement()))
-
+        clinvar_df = process_reading_frame(clinvar_df) 
         clinvar_df['var_id'] = clinvar_df.apply(lambda x: f"{x['chr']}_{x['pos']}_{x['ref']}_{x['alt']}", axis=1)
         # clean up df
-        clinvar_df = clinvar_df[['var_id', 'chr', 'pos', 'ref', 'alt', 'protein_change', 'coding_pos', 'read_frame_pos', 'Germline classification']]
+        clinvar_df = clinvar_df[['var_id', 'chr', 'pos', 'ref', 'alt', 'coding_pos', 'read_frame_pos', 'Germline classification', 'clinvar_id']]
         if gnomad_csv_path:
             if not gnomad_csv_path.endswith(".csv"):
                 raise ValueError("Gnomad file must be a csv file")
@@ -183,9 +236,14 @@ class clipe_expt:
             gnomad_df_no_clinvar = gnomad_df[~gnomad_df['var_id'].isin(clinvar_df['var_id'])]
 
             # pull out protein change and drop rows without protein change
-            # drop non-missense (nonsense, start/stop loss). this keeps synonymous as gnomad notation is p.Met1Met
-            gnomad_df_no_clinvar = filter_out_non_missense(gnomad_df_no_clinvar, 'Protein Consequence')
+            gnomad_df_no_clinvar['protein_change'] = gnomad_df_no_clinvar['Protein Consequence'].str.extract(r'p\.([A-Z][a-z]{2}\d+(?:[A-Z][a-z]{2}|=))')
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar.dropna(subset=['protein_change'])
+            
+            # drop non-missense (nonsense, start/stop loss)
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[~gnomad_df_no_clinvar['protein_change'].str.contains("Ter")]
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[~gnomad_df_no_clinvar['protein_change'].str.contains(r'Met1[A-Z][a-z]{2}')]
 
+            # pull out info
             gnomad_df_no_clinvar['chr'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[0]))
             gnomad_df_no_clinvar['pos'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: int(x.split("_")[1]))
             gnomad_df_no_clinvar['ref'] = gnomad_df_no_clinvar['var_id'].apply(lambda x: x.split("_")[2])
@@ -193,8 +251,10 @@ class clipe_expt:
             # drop non-SNVs
             gnomad_df_no_clinvar = gnomad_df_no_clinvar[gnomad_df_no_clinvar['ref'].str.len() == 1]
             gnomad_df_no_clinvar = gnomad_df_no_clinvar[gnomad_df_no_clinvar['alt'].str.len() == 1]
-            gnomad_df_no_clinvar = process_reading_frame(gnomad_df_no_clinvar, 'Transcript Consequence')
-            gnomad_df_no_clinvar = gnomad_df_no_clinvar[['var_id', 'chr', 'pos', 'ref', 'alt', 'protein_change', 'coding_pos', 'read_frame_pos','Allele Count', 'Allele Number', 'Allele Frequency']]
+            
+            gnomad_df_no_clinvar['coding_pos'] = gnomad_df_no_clinvar['Transcript Consequence'].str.extract(r'(\d+)[ACTG]>[ACTG](?:\s|$)').astype(int)
+            gnomad_df_no_clinvar = process_reading_frame(gnomad_df_no_clinvar)
+            gnomad_df_no_clinvar = gnomad_df_no_clinvar[['var_id', 'chr', 'pos', 'ref', 'alt', 'coding_pos', 'read_frame_pos','Allele Count', 'Allele Number', 'Allele Frequency']]
             var_df = pd.concat([clinvar_w_gnomad, gnomad_df_no_clinvar])
         else:
             var_df = clinvar_df
@@ -202,13 +262,13 @@ class clipe_expt:
         # print df of variants not in var_df but in orig_clinvar_df (excluded variants from upload)
         #excluded_variants = orig_clinvar_df[~orig_clinvar_df['Name'].isin(var_df['Name'])]
 
-        return var_df, coding_strand
+        return var_df
     
 
     def build_desired_dfs(self):
-        self.pathogenic_vars = self.var_df[self.var_df["Germline classification"].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])]
-        self.benign_vars = self.var_df[self.var_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])]
-        self.VUS_vars = self.var_df[self.var_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])]
+        self.pathogenic_vars = self.var_df[self.var_df["Germline classification"].isin(["Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic"])]
+        self.benign_vars = self.var_df[self.var_df['Germline classification'].isin(["Benign", "Likely_benign", "Benign/Likely_benign"])]
+        self.VUS_vars = self.var_df[self.var_df['Germline classification'].isin(["Uncertain_significance", "Conflicting_classifications_of_pathogenicity"])]
         if 'Allele Count' in self.var_df:
             self.gnomad_vars = self.var_df[self.var_df['Allele Count'] >= self.allele_count_min]
         else:
@@ -222,23 +282,33 @@ class clipe_expt:
 
         #self.unclassified_df = self.var_df[~self.var_df['var_id'].isin(self.pathogenic_vars['var_id']) & ~self.var_df['var_id'].isin(self.benign_vars['var_id']) & ~self.var_df['var_id'].isin(self.VUS_vars['var_id'])]
 
-    def find_pam_sites(self, start, stop):
+    def find_pam_sites(self, start, stop, unique_spacers_only=True):
         # find all GG or CC sites in the desired region
+        if unique_spacers_only:
+            with gzip.open(str(Path(__file__).parent) +'/genome_files/dup_guides.pkl.gz', 'rb') as handle:
+                bad_spacers = pickle.load(handle)
+        else:
+            bad_spacers = set()
+
         pam_sites = []
         for i in range(start, stop-2):
             local_fa_loc = i - self.fasta_start
             potential_pam = self.ref_fasta[local_fa_loc-1:local_fa_loc+2] #convert to 0 indexing
             if potential_pam[1:] == "GG":
-                pam_sites.append({"pam_start_loc": i, "strand": "+"})
+                spacer = self.ref_fasta[local_fa_loc-20:local_fa_loc-1]
+                if spacer not in bad_spacers:
+                    pam_sites.append({"pam_start_loc": i, "strand": "+"})
             if potential_pam[:-1] == "CC":
-                pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
+                spacer = str(Seq(self.ref_fasta[local_fa_loc+3:local_fa_loc+23]).reverse_complement())
+                if spacer not in bad_spacers:
+                    pam_sites.append({"pam_start_loc": i+2, "strand": "-"})
         return pd.DataFrame(pam_sites)
     
 
     def find_variant_dense_windows(self, desired_var_df):
         #TODO: in future, can search only around exons of desired gene to speed up window finding
         windows = []
-        pam_sites = self.find_pam_sites(self.vars_start-20-self.rtt_len, self.vars_end+20+self.rtt_len) # add some padding to allow for spacers outside of the variant region
+        pam_sites = self.find_pam_sites(self.vars_start-20-self.rtt_len, self.vars_end+20+self.rtt_len, unique_spacers_only=self.exclude_dup_guides) # add some padding to allow for spacers outside of the variant region
         for _, row in pam_sites.iterrows():
             if row['strand'] == "+":
                 rtt_start = row['pam_start_loc'] - 3
@@ -252,6 +322,8 @@ class clipe_expt:
 
             # get all variants in the window
             count = desired_var_df["pos"].between(rtt_start, rtt_end).sum()
+            if count == 0:
+                continue
             # count the number of variants in the df
             windows.append({'rtt_start':rtt_start, 'rtt_end':rtt_end, "num_vars":count, "peg_strand":row['strand']}) # store in 1 indexing
 
@@ -298,7 +370,6 @@ class clipe_expt:
             no_edit_entry['alt'] = no_edit_entry['ref']
             window_df = no_edit_entry
 
-
         window_df["ref_seq"], window_df["alt_seq"] = zip(*window_df.apply(self.create_edit_fastas, axis=1))
         pegrna_data = {}
         for _, row in window_df.iterrows():
@@ -335,7 +406,7 @@ class clipe_expt:
         merged_df['nicking sgrna'], merged_df['distance_to_nick'] = self.pick_nicking_guide(window_start, peg_strand)
 
         if guide_screening_mode:
-            merged_df = merged_df.drop(columns=["chr","pos","ref","alt","protein_change","coding_pos", "Germline classification"])
+            merged_df = merged_df.drop(columns=["chr","pos","ref","alt","coding_pos", "Germline classification", 'clinvar_id'])
             if "Allele Count" in merged_df:
                 merged_df = merged_df.drop(columns=["Allele Count", "Allele Number", "Allele Frequency"])
 
@@ -351,7 +422,7 @@ class clipe_expt:
         # get the sequence of the variant + ~60 bp on either side
         padding_input = 102 
         # ensures reading frame is maintained
-        if self.coding_strand == "+":
+        if self.gene.strand == "+":
             l_padding = padding_input + reading_frame - 1
             r_padding = padding_input - reading_frame + 3
         else:
@@ -375,15 +446,20 @@ class clipe_expt:
     # TODO: DO I NEED THIS
     def find_spacer(self, ref_seq, spacer):
         # input validation: find spacer in the input
-        orientation = "+"
-        spacer_start = ref_seq.find(spacer)
-        if spacer_start == -1:
+        pos_matches = [m.start() for m in re.finditer(f'(?={spacer})', ref_seq)]
+        neg_matches = [m.start() for m in re.finditer(f'(?={spacer})', str(Seq(ref_seq).reverse_complement()))]
+        if len(pos_matches) == 0 and len(neg_matches) == 0:
+            return "spacer not found", -1, -1
+        if len(pos_matches) + len(neg_matches) > 1:
+            return "multiple spacers found", -1, -1
+        if len(pos_matches) == 1:
+            spacer_start = pos_matches[0]
+            orientation = "+"
+        else:
             ref_seq = str(Seq(ref_seq).reverse_complement())
-            spacer_start = ref_seq.find(spacer)
-            if spacer_start == -1:
-                return "spacer not found", -1, -1
-            else:
-                orientation = "-"
+            spacer_start = neg_matches[0]
+            orientation = "-"
+
         spacer_end = spacer_start + len(spacer)
 
         return spacer_start, spacer_end, orientation
@@ -415,12 +491,13 @@ class clipe_expt:
         warnings = []
         seed_status = "-"
         pam_status = "-"
-
+        #print(f"ref_seq: {ref_seq}, alt_seq: {alt_seq}, spacer: {spacer}, rtt: {rtt}")
+    
         # find spacer in the input
         spacer_start, spacer_end, peg_strand = self.find_spacer(ref_seq, spacer)
         
         # boolean if codons need to be reverse comp'd based on coding strand and spacer orientation
-        codon_flip = ((peg_strand == "-" and self.coding_strand == "+") or (peg_strand == "+" and self.coding_strand == "-"))
+        codon_flip = ((peg_strand == "-" and self.gene.strand == "+") or (peg_strand == "+" and self.gene.strand == "-"))
         
         if peg_strand == "-":
             ref_seq = str(Seq(ref_seq).reverse_complement())
@@ -428,6 +505,9 @@ class clipe_expt:
 
         if spacer_start == "spacer not found":
             warnings.append("!!spacer not found in reference seq!!")
+            return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
+        if spacer_start == "multiple spacers found":
+            warnings.append("!!spacer found >1 times in reference seq - turn on duplicated spacer exclusion!!")
             return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
 
         # check if pam has been disrupted by edit
@@ -553,6 +633,7 @@ class clipe_expt:
                 start = rtt_new[1:8].upper().find(pam_edit["old_pam_codon_region"]) + 1
                 if start == 0:
                     print("Error: old pam not found in rtt -- Alert Developer")
+                    print("rtt", rtt_new[1:8], "old_pam", pam_edit["old_pam_codon_region"])
                     raise ValueError("Error: old pam not found in rtt -- Alert Developer")
                 else:
                     rtt_new = rtt_new[:start] + pam_edit["new_pam_codon_region"] + rtt_new[start+6:]
@@ -639,7 +720,7 @@ class clipe_expt:
 
     def introduce_ptcs(self, merged_df,rtt_rev_temp, window_start, window_end, strand):
         # find first codon in rtt
-        codon_flip = ((strand == "-" and self.coding_strand == "+") or (strand == "+" and self.coding_strand == "-"))
+        codon_flip = ((strand == "-" and self.gene.strand == "+") or (strand == "+" and self.gene.strand == "-"))
         first_codon_idx, last_rtt_variant = self.find_first_codon(merged_df, window_start, window_end, codon_flip, strand)
 
         if strand == "-":
@@ -690,8 +771,8 @@ class clipe_expt:
 
     def pick_nicking_guide(self, pe_nick_site, pe_nick_strand, min_dist = 40, max_dist = 100):
         # find all GG or CC sites in the desired region
-        pam_sites = self.find_pam_sites(pe_nick_site-max_dist, pe_nick_site-min_dist)
-        pam_sites = pd.concat([pam_sites, self.find_pam_sites(pe_nick_site+min_dist, pe_nick_site+max_dist)])
+        pam_sites = self.find_pam_sites(pe_nick_site-max_dist, pe_nick_site-min_dist, unique_spacers_only=False)
+        pam_sites = pd.concat([pam_sites, self.find_pam_sites(pe_nick_site+min_dist, pe_nick_site+max_dist, unique_spacers_only=False)])
         if pe_nick_strand == "+":
             pam_sites = pam_sites[pam_sites["strand"] == "-"]
         elif pe_nick_strand == "-":
@@ -847,3 +928,13 @@ def make_synonymous_changes(codons):
             if CODON_DICT[key][0] == CODON_DICT[codon][0] and key != codon:
                 codon_changes[codon].append({'syn_codon': key, 'aa': CODON_DICT[key][0], 'freq': CODON_DICT[key][2]})
     return codon_changes
+
+# def main():
+#     # example usage
+#     expt = clipe_expt('TSC2', 'NM_000548.5', './example_input/gnomAD_v4.1.0_ENSG00000103197_2024_11_03_20_28_38.csv', 10, 40, 10, True, 'vus', ['BLB'], allele_count_min=5, prog_bar=None)
+#     expt.var_df.to_csv('var_df.csv', index=False)
+#     peg_df, arch_df, windows = expt.run_guide_design()
+#     peg_df.to_csv('peg_df.csv', index=False)
+#     output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
+
+# main()

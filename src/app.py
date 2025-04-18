@@ -18,12 +18,11 @@ gene_data['transcript_id'] = gene_data['transcript_id'].apply(eval)
 gene_names = list(gene_data["gene_id"])
 gene_data_dict = gene_data.set_index("gene_id")['transcript_id'].to_dict()
 
-cds_data = pd.read_csv(app_dir / "genome_files/hg38_transcript_coords.tsv", sep="\t")
+cds_data = pd.read_csv(app_dir / "genome_files/hg38_transcript_cds_lengths.tsv", sep="\t")
 cds_data['cds_lengths'] = cds_data['cds_lengths'].apply(eval)
 cds_data['cds_exons'] = cds_data['cds_exons'].apply(eval)
 
-example_clinvar_path = str(app_dir / "example_input/clinvar_result.txt")
-example_gnomad_path = str(app_dir / "example_input/gnomAD_v4.1.0_ENSG00000103197_2025_04_16_14_48_10.csv")
+
 question_circle_fill = ui.HTML('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-question-circle-fill mb-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.496 6.033h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286a.237.237 0 0 0 .241.247zm2.325 6.443c.61 0 1.029-.394 1.029-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94 0 .533.425.927 1.01.927z"/></svg>')
 
 # Add page title and sidebar
@@ -46,8 +45,6 @@ app_ui = ui.page_navbar(
             ui.input_selectize("gene", label="Gene Name", choices=[], width="100%"),
             ui.input_select("transcript", label="Transcript (Refseq)", choices=[], width="100%"),
             ui.input_numeric("num_designs", label="Number of epegRNA libraries to design", value=12, step=1, min=1),
-            ui.input_file("clinvar_csv", ui.tooltip(ui.span("Choose missense ClinVar tsv to upload  ", question_circle_fill),"This file is generated from ClinVar after searching for your gene, filtering for missense variants, and clicking \"Download\"",placement="right"), multiple=False),
-            ui.input_file("gnomad_csv", ui.tooltip(ui.span("Choose gnomAD csv to upload  ", question_circle_fill),"This file is generated from gnomAD after searching for your gene, filtering as desired, and clicking \"Export variants\"",placement="right"), multiple=False),
             ui.input_checkbox_group(  
                 "checkbox_group",  
                 ui.span("Include additional variants in editing windows:", style="text-decoration: underline;"),  
@@ -57,12 +54,15 @@ app_ui = ui.page_navbar(
                     "GNOMAD": "gnomAD variants with allele count >= 5",
                     "PTC": "PTC variants to induce LoF for assay validation/calibration",  
                 },
-                width="100%"),
+                width="100%", ),
             ui.span(ui.input_task_button("action_button", "Design epegRNA Libraries"), style="align-self: center;"),
+            ui.span(),
             ui.accordion(ui.accordion_panel('Additional Options',
                 ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
                 ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
-                ui.input_radio_buttons("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", {"yes": "Yes", "no": "No"}, width="100%"),
+                ui.input_checkbox("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", value=True, width="100%"),
+                ui.input_checkbox("excl_dup_guides", "Exclude spacers duplicated in genome?", value=True, width="100%"),
+                ui.input_file("gnomad_csv", ui.tooltip(ui.span("Choose gnomAD csv to upload  ", question_circle_fill),"This file is generated from gnomAD after searching for your gene, filtering as desired, and clicking \"Export variants\"",placement="right"), multiple=False),
                 ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
                 ),id="additional_options", multiple=False, open=False),
             open="desktop",
@@ -122,8 +122,6 @@ app_ui = ui.page_navbar(
 )
 
 def server(input, output, session):
-    example_bool = reactive.value(False)
-    example_count = reactive.value(0)
     peg_df_glob = reactive.value(pd.DataFrame())
     arch_df_glob = reactive.value(pd.DataFrame())
     fish_df_glob = reactive.value(pd.DataFrame())
@@ -134,64 +132,42 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.gene)
     def _():
-        ui.remove_ui("#example_span")
         if input.gene() == "":
             choices = []
         else:
             choices = gene_data_dict[input.gene()]
             ui.update_select("transcript", choices=choices)
         
-        ui.insert_ui(ui.span(ui.input_action_link("example", "Design with TSC2 example"), style="align-self: center;", id="example_span"),
-                     selector="#additional_options", where="beforeBegin")
-    
-    @reactive.effect
-    @reactive.event(input.example)
-    def _():
-        ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
-        example_bool.set(True)
-        example_count.set(example_count.get()+1)
     
     @render.data_frame
     def render_design_table():
         return async_run_guide_design.result()
 
     @reactive.effect
-    @reactive.event(input.action_button, example_count, ignore_init=True)
+    @reactive.event(input.action_button, ignore_init=True)
     def build_peg_df():
-        example_bool_loc = example_bool.get()
-        example_bool.set(False)       
-        async_run_guide_design(example_bool_loc, input.transcript(), input.length_pbs(), input.length_rtt(), input.num_designs(), input.design_strategy(), input.checkbox_group(), input.allele_min(), input.clinvar_csv(), input.gnomad_csv(), input.disrupt_pam())
+        async_run_guide_design(input.gene(), input.transcript(), input.length_pbs(), input.length_rtt(), input.num_designs(), input.design_strategy(), input.checkbox_group(), input.allele_min(), input.gnomad_csv(), input.disrupt_pam(), input.excl_dup_guides())
         
     
     @ui.bind_task_button(button_id="action_button")
     @reactive.extended_task
-    async def async_run_guide_design(example_bool_loc, transcript, length_pbs, length_rtt, num_designs, design_strategy, checkbox_group, allele_min, clinvar_csv, gnomad_csv, disrupt_pam):
+    async def async_run_guide_design(gene_name, transcript, length_pbs, length_rtt, num_designs, design_strategy, checkbox_group, allele_min, gnomad_csv, disrupt_pam, excl_dup_guides):
         # remove download button if it exists
         ui.remove_ui("#download_button")
         ui.remove_ui("#download_checkbox")
         peg_df_glob.set(pd.DataFrame())
-        if disrupt_pam == "yes":
-            disrupt_pam = True
-        else:
-            disrupt_pam = False
         
         # validate input files exist
-        if example_bool_loc:
-            clinvar_file = example_clinvar_path
-            gnomad_file = example_gnomad_path
+        if not gnomad_csv:
+            gnomad_file = None
+            if "GNOMAD" in checkbox_group:
+                ui.notification_show("Please upload a gnomAD file to include gnomAD variants in the design.", duration=5, type="warning")
         else:
-            if not clinvar_csv:
-                raise ValueError("Clinvar file must be provided")
-            else:
-                clinvar_file = clinvar_csv[0]["datapath"]
-            if not gnomad_csv:
-                gnomad_file = None
-            else:
-                gnomad_file = gnomad_csv[0]["datapath"]
+            gnomad_file = gnomad_csv[0]["datapath"]
         
         with ui.Progress(min=0, max=6) as p:
             p.set(0, message="Running")
-            expt = clipe_expt(transcript.split(" ")[0], clinvar_file, gnomad_file, length_pbs, length_rtt, num_designs, disrupt_pam, design_strategy, checkbox_group, allele_min, prog_bar=p)
+            expt = clipe_expt(gene_name, transcript.split(" ")[0], gnomad_file, length_pbs, length_rtt, num_designs, disrupt_pam, excl_dup_guides, design_strategy, checkbox_group, allele_min, prog_bar=p)
             peg_df, arch_df, windows = expt.run_guide_design()
             p.set(5, detail="Finishing up")
             peg_df_glob.set(peg_df)
@@ -288,19 +264,19 @@ def server(input, output, session):
     def total_vus():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Uncertain significance", "Conflicting classifications of pathogenicity"])].shape[0]
+            return peg_df[peg_df['Germline classification'].isin(["Uncertain_significance", "Conflicting_classifications_of_pathogenicity"])].shape[0]
     
     @render.ui
     def total_plp():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely pathogenic", "Pathogenic/Likely pathogenic"])].shape[0]
+            return peg_df[peg_df['Germline classification'].isin(["Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic"])].shape[0]
     
     @render.ui
     def total_blb():
         peg_df = peg_df_glob.get()
         if peg_df.shape[0] > 0:
-            return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely benign", "Benign/Likely benign"])].shape[0]
+            return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely_benign", "Benign/Likely_benign"])].shape[0]
 
     @render_plotly
     @reactive.event(peg_df_glob, ignore_init=True)
