@@ -25,6 +25,9 @@ cds_data['cds_exons'] = cds_data['cds_exons'].apply(eval)
 clinvar_date = list(Path(str(app_dir) + "/genome_files/clinvar/").glob("*.gz"))[0].name.split("_")[1]
 clinvar_date = f"{clinvar_date[0:4]}-{clinvar_date[4:6]}-{clinvar_date[6:8]}"
 
+RTT_RANGE = [8,80]
+PBS_RANGE = [4,20]
+
 question_circle_fill = ui.HTML('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-question-circle-fill mb-1" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.496 6.033h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286a.237.237 0 0 0 .241.247zm2.325 6.443c.61 0 1.029-.394 1.029-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94 0 .533.425.927 1.01.927z"/></svg>')
 
 # Add page title and sidebar
@@ -61,10 +64,10 @@ app_ui = ui.page_navbar(
             ui.span(ui.code(f"ClinVar Version: {clinvar_date}"), style="align-self: center;"),
             ui.span(),
             ui.accordion(ui.accordion_panel('Additional Options',
-                ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=0, max=60),
-                ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=4, max=20),
+                ui.input_numeric("length_rtt", label="RTT Length", value=40, step=1, min=RTT_RANGE[0], max=RTT_RANGE[1]),
+                ui.input_numeric("length_pbs", label="PBS Length", value=10, step=1, min=PBS_RANGE[0], max=PBS_RANGE[1]),
                 ui.input_checkbox("disrupt_pam", "Disrupt PAM/Seed region? (synonymous variants)", value=True, width="100%"),
-                ui.input_checkbox("excl_dup_guides", "Exclude spacers duplicated in genome?", value=True, width="100%"),
+                ui.input_checkbox("excl_dup_guides", "Exclude spacers duplicated in genome?", value=False, width="100%"),
                 ui.input_file("gnomad_csv", ui.tooltip(ui.span("Choose gnomAD csv to upload  ", question_circle_fill),"This file is generated from gnomAD after searching for your gene, filtering as desired, and clicking \"Export variants\"",placement="right"), multiple=False),
                 ui.input_numeric("allele_min", label="gnomAD minimum allele count", value=5, step=1, min=0),
                 ),id="additional_options", multiple=False, open=False),
@@ -159,7 +162,14 @@ def server(input, output, session):
         ui.remove_ui("#download_button")
         ui.remove_ui("#download_checkbox")
         peg_df_glob.set(pd.DataFrame())
-        
+
+        if length_pbs < PBS_RANGE[0] or length_pbs > PBS_RANGE[1]:
+            ui.notification_show(f"PBS length must be between {PBS_RANGE[0]} and {PBS_RANGE[1]}", duration=5, type="error")
+            return
+        if length_rtt < RTT_RANGE[0] or length_rtt > RTT_RANGE[1]:
+            ui.notification_show(f"RTT length must be between {RTT_RANGE[0]} and {RTT_RANGE[1]}", duration=5, type="error")
+            return
+
         # validate input files exist
         if not gnomad_csv:
             gnomad_file = None
