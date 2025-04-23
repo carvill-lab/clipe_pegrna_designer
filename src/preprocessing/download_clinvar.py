@@ -8,7 +8,7 @@ def run_rsync(os_command, max_attempts=5):
         if result.returncode == 0:
             break
         if i == max_attempts - 1:
-            raise RuntimeError(f"Rsync failed to pull files from UCSC/NCBI after {max_attempts} attempts. Alert Developer")
+            raise RuntimeError(f"Rsync failed to pull files from NCBI after {max_attempts} attempts. Alert Developer")
         print(f"Attempt {i + 1} failed. Retrying...")
         
     return
@@ -30,10 +30,7 @@ vcf_files = [f for f in files if f.endswith(".vcf.gz")]
 tbi_files = [f for f in files if f.endswith(".tbi")]
 if len(vcf_files) != 1 or len(tbi_files) != 1:
     print(f"Warning: clinvar files not properly downloaded. {len(vcf_files)} vcf files and {len(tbi_files)} tbi files found.")
-
-# print("Unzipping Clinvar file...")
-# os.system(f"gunzip {local_path}/{vcf_files[0]}")
-# os.system(f"mv {local_path}/{tbi_files[0]} {local_path}/{tbi_files[0].split('.')[0]}.vcf.tbi")
+    raise RuntimeError("Clinvar files not properly downloaded. Alert Developer")
 
 
 # --------

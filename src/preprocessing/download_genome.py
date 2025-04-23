@@ -10,7 +10,7 @@ def run_rsync(os_command, max_attempts=5):
         if result.returncode == 0:
             break
         if i == max_attempts - 1:
-            raise RuntimeError(f"Rsync failed to pull files from UCSC/NCBI after {max_attempts} attempts. Alert Developer")
+            raise RuntimeError(f"Rsync failed to pull files from UCSC after {max_attempts} attempts. Alert Developer")
         print(f"Attempt {i + 1} failed. Retrying...")
         
     return
@@ -46,7 +46,13 @@ for file in files:
     os.system(f"gunzip {os.path.join(local_path, file)}")
     Fasta(f"{local_path}/{chr_name}.fa", build_index=True)
 
-# TODO check number of files downloaded 
+
+files = os.listdir(local_path)
+fa_files = [f for f in files if f.endswith(".fa")]
+fai_files = [f for f in files if f.endswith(".fai")]
+if len(fa_files) != 24 or len(fai_files) != 24:
+    print(f"Warning: hg38 files not properly downloaded. {len(fa_files)} fa files and {len(fai_files)} fai files found.")
+    raise RuntimeError("hg38 files not properly downloaded. Alert Developer")
 
 
 print("Done!")
