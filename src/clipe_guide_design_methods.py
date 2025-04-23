@@ -507,7 +507,7 @@ class clipe_expt:
             warnings.append("!!spacer not found in reference seq!!")
             return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
         if spacer_start == "multiple spacers found":
-            warnings.append("!!spacer found >1 times in reference seq - turn on duplicated spacer exclusion!!")
+            warnings.append("could not disrupt pam as spacer is duplicated nearby")
             return rtt, pam_status, seed_status, str(self.find_aa_changes(ref_seq, alt_seq, codon_flip)), warnings
 
         # check if pam has been disrupted by edit
