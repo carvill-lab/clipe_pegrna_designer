@@ -2,6 +2,8 @@
 
 name: Fly Deploy Dev
 on:
+  schedule:
+    - cron: '0 4 * * 0' # deploy every sunday at 4:00 UTC
   push:
     branches:
       - local-clinvar
