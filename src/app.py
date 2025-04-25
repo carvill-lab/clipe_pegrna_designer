@@ -6,7 +6,7 @@ from datetime import date
 from clipe_guide_design_methods import *
 import tempfile
 import shutil
-import gc
+import json
 
 # Load data and compute static values
 from shiny import App, reactive, render, ui
@@ -93,6 +93,14 @@ app_ui = ui.page_navbar(
         ),
         ui.layout_columns(
             ui.card(
+                ui.card_header(
+                    "epegRNA distribution",
+                    class_="d-flex justify-content-between align-items-center",
+                ),
+                ui.span(ui.output_ui("peg_dist_chart"), style="align-self: center;"),
+                full_screen=True
+            ),
+            ui.card(
                 ui.card_header("epegRNA designs"), ui.output_data_frame("render_design_table"), full_screen=True
             ),
             ui.card(
@@ -102,15 +110,8 @@ app_ui = ui.page_navbar(
                 ),
                 ui.output_ui("download_area"),
             ),
-            ui.card(
-                ui.card_header(
-                    "epegRNA distribution",
-                    class_="d-flex justify-content-between align-items-center",
-                ),
-                output_widget("peg_dist_chart"),
-            ),
-            col_widths=[8, 4, 12],
-            row_heights=(2,1),
+            col_widths=[12, 8, 4],
+            row_heights=(2,2),
             fillable=True,
         ),
         ui.include_css(app_dir / "styles.css"),
@@ -132,6 +133,7 @@ def server(input, output, session):
     arch_df_glob = reactive.value(pd.DataFrame())
     fish_df_glob = reactive.value(pd.DataFrame())
     fish_fa_txt_glob = reactive.value("")
+    tx_glob = reactive.value("")
 
     ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
 
@@ -189,10 +191,10 @@ def server(input, output, session):
             output = build_files_for_jellyfish(peg_df, screening_df=arch_df)
             fish_df_glob.set(output[0])
             fish_fa_txt_glob.set(output[1])
-            
+            tx_glob.set(transcript.split(" ")[0])
             #free up memory
             del expt
-            gc.collect()
+            # gc.collect()
             p.set(6)
         
         # TODO: reduce sig figs in allele percentage
@@ -291,67 +293,40 @@ def server(input, output, session):
         if peg_df.shape[0] > 0:
             return peg_df[peg_df['Germline classification'].isin(["Benign", "Likely_benign", "Benign/Likely_benign"])].shape[0]
 
-    @render_plotly
-    @reactive.event(peg_df_glob, ignore_init=True)
+    @render.ui
+    @reactive.event(tx_glob)
     def peg_dist_chart():
-        peg_df = peg_df_glob.get()
-        if peg_df.shape[0] != 0:
-            df_to_plot = peg_df.copy().dropna(subset=["coding_pos"])
-            if df_to_plot.shape[0] == 0:
-                return go.Figure()
-            
-            x = [int(i) for i in list(df_to_plot["coding_pos"])]
-            transcript_data = cds_data[cds_data['transcript_id'] == input.transcript().split(" ")[0]]
-            cds_lengths = transcript_data['cds_lengths'].iloc[0]
-            total_cds_length = sum(cds_lengths)
-            cds_exons = transcript_data['cds_exons'].iloc[0]
+        # open up html text file
+        with open(app_dir / "proteinpaint.html", "r", encoding="utf-8") as f:
+            html_text = f.read()
+        # replace the placeholder with the actual data
+        html_text = html_text.replace("**transcript**", tx_glob.get().split(".")[0])
+        variant_list = []
+        for i, row in peg_df_glob.get().iterrows():
+            var = {'chr': "chr" + str(row['chr']), 'pos': row['pos']-1, 'ref': row['ref'], 'alt': row['alt'], 'dt':1}
+            var.update({'aa_change': row['aa_change'], 'clinvar_id': row['clinvar_id'], 'window': row['editing_window']})
 
-            layout = go.Layout(
-                yaxis = dict(range=[-.5, .5], showticklabels=False),  # Set y-axis scale from 0 to 1
-                xaxis = dict(range=[1, total_cds_length]),
-                plot_bgcolor='white',  # Change background to white
-                title=input.gene() + " PE windows",
-            )
-            # Plot the chart
-            fig = go.Figure(layout=layout)
+            if row['Germline classification'] in ["Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic"]:
+                var['class'] = "P"
+                var['mname'] = ""
+            elif row['Germline classification'] in ["Benign", "Likely_benign", "Benign/Likely_benign"]:
+                var['class'] = "S"
+                var['mname'] = ""
+            elif row['Germline classification'] in ["Uncertain_significance", "Conflicting_classifications_of_pathogenicity"]:
+                var['class'] = "D"
+                var['mname'] = ""
+            else:
+                var['class'] = "I"
+                if "End" in row['aa_change']:
+                    var['mname'] = ""
+                else:
+                    var['mname'] = ""
+            variant_list.append(var)
 
-            fig.add_shape(
-                type="rect",
-                x0=1,
-                y0=-.3,
-                x1=total_cds_length,
-                y1=.3,
-                line_width=3,
-                opacity=0.8,
-            )
-            cds_pos = 1
-            for i, cds_endpoint in enumerate(cds_lengths):
-                fig.add_trace(go.Scatter(
-                    x=[cds_pos, cds_pos],
-                    y=[-.3, .3],
-                    mode="lines",
-                    line=dict(color="Gray", dash="dot"),
-                    line_width=.5,
-                    hoverinfo="text",
-                    text=f"Exon {cds_exons[i]}",
-                    showlegend=False
-                ))
-                cds_pos += cds_endpoint
+        variant_list = json.dumps(variant_list)
+        variant_list = re.sub(r'(?<!: )"(\S*?)"', '\\1', variant_list)
+        html_text = html_text.replace("**variant_list**", variant_list)
 
-            windows = df_to_plot.groupby("editing_window").agg(Start=("coding_pos", "min"), Finish=("coding_pos", "max")).reset_index()
-            for _, window in windows.iterrows():
-                fig.add_shape(
-                    type="rect",
-                    x0=window['Start'],
-                    y0=-0.3,
-                    x1=window['Finish'],
-                    y1=0.3,
-                    fillcolor="darkviolet",
-                    opacity=.8,
-                    line_width=0,
-                    label=dict(text=str(window['editing_window']), font=dict(color="White"))
-                )
-            
-            return fig
-
+        return ui.HTML(html_text)
+        
 app = App(app_ui, server, static_assets=app_dir / "www")

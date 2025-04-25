@@ -1,0 +1,55 @@
+<html>
+<body>
+<script src="https://proteinpaint.stjude.org/bin/proteinpaint.js" charset="utf-8"></script>
+
+<div id=a style="margin:10px"></div>
+
+    <script>
+    runproteinpaint({
+	    host:'https://proteinpaint.stjude.org',
+	    holder:document.getElementById('a'),
+	    parseurl:true,
+		nobox:true,
+		noheader:true,
+		genome:'hg38',
+		gene:'**transcript**',
+		hidegenecontrol:true,
+		tracks:[{
+				type: "mds3",
+				name: "CliPE Variants",
+				custom_variants:**variant_list**,
+				skewerModes:[
+					{
+					type:'numeric',  byAttribute:'window', label:'Window', axisheight:1
+					},]
+				}],
+		mclassOverride: {
+			className: "ClinVar Classifications",
+			classes: {
+				P: {
+					color: "#E74C3C",
+					label: "Pathogenic/Likely Pathogenic",
+					desc: "Pathogenic/Likely Pathogenic"
+				},
+				S: {
+					color: "#2874A6",
+					label: "Benign/Likely Benign",
+					desc: "Benign/Likely Benign"
+				},
+				D: {
+					color: "gray",
+					label: "Variant of Uncertain Significance",
+					desc: "Variant of Uncertain Significance"
+				},
+				I: {
+					color: "lightgray",
+					label: "Control Variant",
+					desc: "Control Variant"
+				},
+			}
+		}
+    })
+    </script>
+
+    </body>
+    </html>
