@@ -22,11 +22,11 @@ If you would like to run CliPE pegRNA designer locally, you can pull our docker 
 1. Download and install [Docker Desktop](https://www.docker.com/get-started/), then open the application
 2. Using the command line, pull our docker image: 
 ```
-docker pull --platform linux/x86_64 ghcr.io/nbodkin/clipe_pegrna_designer:main
+docker pull --platform linux/x86_64 ghcr.io/carvill-lab/clipe_pegrna_designer:main
 ```
 3. Using the command line, run the image:
 ```
-docker run -p 8080:8080 --name clipe ghcr.io/nbodkin/clipe_pegrna_designer:main
+docker run -p 8080:8080 --name clipe ghcr.io/carvill-lab/clipe_pegrna_designer:main
 ```
 4. Open up the webapp in your browser using http://localhost:8080
 
@@ -40,4 +40,4 @@ This project is licensed under the Creative Commons Attribution 4.0 Internationa
 
 ## Contact
 
-For any questions or issues, please open an issue on the [GitHub repository](https://github.com/nbodkin/clipe_pegrna_designer/issues).
+For any questions or issues, please open an issue on the [GitHub repository](https://github.com/carvill-lab/clipe_pegrna_designer/issues).
