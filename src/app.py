@@ -136,6 +136,11 @@ def server(input, output, session):
     tx_glob = reactive.value("")
 
     ui.update_selectize("gene", choices=gene_names, selected="TSC2", server=True)
+    ui.notification_show(
+            f"Note: this is the development version of cliPE designer. Stable version can be found at design.clipe-mave.org",
+            type='message',
+            duration=6,
+        )
 
     @reactive.effect
     @reactive.event(input.gene)
